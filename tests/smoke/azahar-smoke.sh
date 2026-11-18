@@ -4,6 +4,7 @@
 # SYNOPSIS
 #   tests/smoke/azahar-smoke.sh --3dsx FILE --result PATH --expect REGEX
 #                               [--timeout SEC] [--screenshot PNG] [--display :N] [--keep-home]
+#                               [--sd-file SRC=DEST]...
 #
 # DESCRIPTION
 #   Runs a self-reporting .3dsx in headless Azahar (azahar-headless) and checks its result file.
@@ -26,6 +27,8 @@
 #   --display :N       X display (default: the first free one from :100; an existing X server on
 #                      the given display is reused and not stopped)
 #   --keep-home        keep the temporary HOME (Azahar logs, virtual SD) and print its path
+#   --sd-file SRC=DEST copy file SRC to DEST on the virtual SD card (DEST relative to its root,
+#                      e.g. rmxp3ds/test/bench.rb); repeatable
 #   -h, --help         show this help
 #
 # EXAMPLE
@@ -39,6 +42,7 @@ usage() {
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 FILE="" RESULT="" EXPECT="" TIMEOUT=120 SHOT="" KEEP=0
+SD_FILES=()
 DISPLAY_NUM=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -49,6 +53,11 @@ while [ $# -gt 0 ]; do
     --screenshot) SHOT="${2:?--screenshot needs a value}"; shift 2 ;;
     --display) DISPLAY_NUM="${2:?--display needs a value}"; shift 2 ;;
     --keep-home) KEEP=1; shift ;;
+    --sd-file)
+      case "${2:-}" in
+        ?*=?*) SD_FILES+=("$2"); shift 2 ;;
+        *) echo "azahar-smoke.sh: --sd-file needs SRC=DEST" >&2; exit 2 ;;
+      esac ;;
     -h|--help) usage; exit 0 ;;
     *) echo "azahar-smoke.sh: unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -82,6 +91,13 @@ AZ_HOME="$(mktemp -d)"
 SDMC="$AZ_HOME/.local/share/azahar-emu/sdmc"
 mkdir -p "$SDMC/rmxp3ds/test"
 : >"$SDMC/rmxp3ds/test/autoexit"
+for spec in "${SD_FILES[@]}"; do
+  src="${spec%%=*}" dest="${spec#*=}"
+  case "$dest" in /*|*..*) echo "azahar-smoke.sh: --sd-file DEST must be relative: $dest" >&2; exit 2 ;; esac
+  [ -f "$src" ] || { echo "azahar-smoke.sh: --sd-file source $src not found" >&2; exit 2; }
+  mkdir -p "$(dirname "$SDMC/$dest")"
+  cp "$src" "$SDMC/$dest"
+done
 if [ -f "$REPO/.devcontainer/azahar/qt-config.ini" ]; then
   mkdir -p "$AZ_HOME/.config/azahar-emu"
   cp "$REPO/.devcontainer/azahar/qt-config.ini" "$AZ_HOME/.config/azahar-emu/"

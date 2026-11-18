@@ -34,6 +34,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          submodules: true
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
       # Built on every run; layers come from the GitHub Actions cache. Nothing is pushed.
       - name: Build
@@ -67,13 +68,35 @@ jobs:
             tests/smoke/azahar-smoke.sh --3dsx build/hello/hello.3dsx \
               --result rmxp3ds/test/hello.txt --expect '^RMXP3DS_TEST hello PASS' \
               --timeout 180 --screenshot build/hello-smoke.png
-      - name: Upload screenshot
+      # M1: CRuby for the 3DS (runtime/3ds/ruby) and the Ruby test/benchmark app.
+      - name: Build CRuby for 3DS and tools/bench (.3dsx)
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspaces/rmxp3ds" -w /workspaces/rmxp3ds rmxp3ds-dev:ci bash -c '
+              set -euo pipefail
+              runtime/3ds/ruby/build.sh --jobs "$(nproc)"
+              cmake -S tools/bench -B build/bench -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake"
+              cmake --build build/bench'
+      # Scripts and fixture from the virtual SD card (M1: "runs a script from SD").
+      - name: Azahar Ruby test (scripts from SD)
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspaces/rmxp3ds" -w /workspaces/rmxp3ds rmxp3ds-dev:ci \
+            tests/smoke/azahar-smoke.sh --3dsx build/bench/bench.3dsx \
+              --result rmxp3ds/test/rubybench.txt --expect '^RMXP3DS_TEST rubybench PASS' \
+              --sd-file tools/bench/romfs/bench.rb=rmxp3ds/test/bench.rb \
+              --sd-file tools/bench/romfs/rgss_stubs.rb=rmxp3ds/test/rgss_stubs.rb \
+              --sd-file build/bench/romfs/Map001.rxdata=rmxp3ds/test/Map001.rxdata \
+              --timeout 600 --screenshot build/bench-smoke.png
+      - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: hello-smoke
+          name: smoke-tests
           path: |
             build/hello/hello.3dsx
             build/hello-smoke.png
+            build/bench/bench.3dsx
+            build/bench-smoke.png
           if-no-files-found: ignore
           retention-days: 14

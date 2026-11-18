@@ -4,6 +4,9 @@
 Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` from PLAN §10.
 
 ## Status
+- **2026-11-18:** M1 in progress: CRuby 3.1.3 cross-built in the fork (`runtime/3ds/ruby`,
+  branch `feat/3ds-ruby`), `tools/bench` passes in Azahar. Console run pending (M0 hello + M1
+  bench together).
 - **2026-11-18:** Bootstrap. Repo layout, submodule `runtime/` → mkxp-z-3ds `dev` @ `3c7c47c`.
   Environment decided (D10). M0 in progress.
 
@@ -93,6 +96,33 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 - **Risks:** stack sizes (libctru main thread 32 KB, SDL2 n3ds threads 80 KB default); GVL hand-off
   on the 3DS app core (no time slicing between equal priorities, unverified); app memory for .3dsx
   on New 3DS (unverified); encoding tables size; libctru 2.7.1 (2026-11-01) newer than pinned 2.7.0.
+
+## M1 findings (2026-11-18, emulator; fork `feat/3ds-ruby` @ 81cf0755)
+- **Build:** `runtime/3ds/ruby/build.sh` about 1 min (-j3, workspace), peak about 1.9 GiB.
+  `libruby-static.a` 5.3 MB, `bench.3dsx` 5.9 MB.
+- **Problems found and fixed** (fork patches/shim, details in `runtime/3ds/ruby/README.md`):
+  - GCC 16 defaults to C23 → `-std=gnu17`.
+  - `addr2line.c` needs dl → `rb_cv_binary_elf=no`.
+  - Missing POSIX symbols → shim.
+  - libctru `fcntl()` only handles sockets → `rb_bug` on the first File.open → close-on-exec macros
+    removed.
+  - `.S` files assembled without the arch flags (`ASFLAGS` only) → `ASFLAGS` with `-mfpu=vfp`.
+  - arm32 coroutine doesn't save d8–d15. Register-level test: fails without the patch, passes with it.
+  - Main-stack size unknown → no stack-overflow detection → derived from `__stacksize__`. Now
+    fires at about 951 KiB of 1 MiB.
+  - Transient heap 32 MB → 4 MB: malloc arena after the bench 37 MB → 8.3 MB.
+  - `File.expand_path('sdmc:/x')` was relative → `file.c` patch.
+- **Works (Azahar):** VM init 0.8 s; scripts from `sdmc:/` and `romfs:/`; Marshal of the
+  synthetic map (75 KB, digest verified); Zlib; Fiber; `Enumerator#next`; Shift_JIS; `sleep`;
+  `Time`; `Dir.glob`; `Random`.
+- **Open:**
+  - `Thread.new{}.value` hangs. The timer pipe fails ("scheduling broken"), and it's unclear
+    whether libsysbase `pthread_cond_timedwait` honours `CLOCK_MONOTONIC`.
+  - Deep C recursion (nested `inspect` ~2000 levels) crashes instead of raising.
+  - The initial cwd in Azahar is `/` (hbmenu on hardware: unverified).
+- **Emulator timings are not performance numbers.** For the record (Azahar 2126.2, 100 % clock,
+  JIT): while_loop_1M 670 ms, method_call_300k 1028 ms, object_alloc_200k 1637 ms,
+  marshal_load_fixture 90 ms.
 
 ## Measurements
 _None yet. Console numbers only, with date, commits of both repos and settings._
