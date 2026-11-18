@@ -1,0 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// mkxp-z-3ds config (JSON5) for the engine check: RGSS1, run enginecheck.rb instead of game scripts.
+{
+  "rgssVersion": 1,
+  "customScript": "enginecheck.rb"
+}

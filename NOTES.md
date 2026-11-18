@@ -4,6 +4,11 @@
 Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` from PLAN §10.
 
 ## Status
+- **2026-11-18:** M3 in progress: SDL2 utility libraries for the 3DS (fork `3ds/deps`, test app
+  `tools/sdlcheck`); mkxp-z runs on the 3DS with the citro3d renderer (D14, D15): engine, render
+  (23 checks) and synthetic title screen checks pass in Azahar. Hardware run 3 kit ready
+  (`tools/hw3`). Open for the M3 exit: hardware run 3, the title screen of a real RPG Maker XP
+  blank project (local only).
 - **2026-11-18:** M2 done: Essentials v21.1 runs headlessly on the New 3DS (`tools/m2`, hardware
   run 2). Go/no-go: **go, full scope** (docs/DECISIONS.md D13). Next: M3.
 - **2026-11-18:** M1 done: CRuby 3.1.3 cross-built in the fork (`runtime/3ds/ruby`, merged into
@@ -38,8 +43,9 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 | devkitARM | r68 (arm-none-eabi-gcc 16.1.0) | pacman local db in image |
 | libctru / citro3d / citro2d | 2.7.0 / 1.7.1 / 1.7.0 | pacman local db in image |
 | tex3ds / picasso / 3dstools / 3dslink | 2.3.0 / 2.7.2 / 1.3.1 / 0.6.3 | pacman local db in image |
-| 3DS portlibs (in image via `3ds-portlibs`) | 3ds-zlib 1.3.1, 3ds-libpng 1.6.53, 3ds-freetype 2.14.1, 3ds-libogg 1.3.6, 3ds-libvorbisidec 1.2.1 (Tremor; no full libvorbis), 3ds-bzip2 1.0.8, 3ds-physfs 3.2.0, 3ds-libiconv 1.17, 3ds-pkg-config 0.28 | pacman local db in image |
+| 3DS portlibs (in image via `3ds-portlibs`) | 3ds-zlib 1.3.1, 3ds-libpng 1.6.53, 3ds-freetype 2.14.1, 3ds-libjpeg-turbo (libjpeg API 62), 3ds-libogg 1.3.6, 3ds-libvorbisidec 1.2.1 (Tremor; no full libvorbis), 3ds-bzip2 1.0.8, 3ds-physfs 3.2.0, 3ds-libiconv 1.17, 3ds-pkg-config 0.28 | pacman local db in image |
 
+| SDL2 / SDL2_image / SDL2_ttf (3DS, fork `3ds/deps`) | 2.32.10 / 2.8.12 / 2.24.0, release `.tar.gz` sha256 `5f5993c5…ca5165` / `393f5efb…785381` / `0b2bf1e7…bfd`; SDL2 and SDL2_image match GitHub's asset digests, SDL2_ttf verified with the SDL release key `1528635D8053A57F77D1E08630A59377A7763BE6` | GitHub releases API (`assets[].digest`), `.sig` files, keyserver.ubuntu.com |
 | ruby-build | `v20261023` | github.com/rbenv/ruby-build/releases |
 | Ruby (runtime + host baseruby) | **3.1.3** (upstream `ruby/ruby` tag `v3_1_3` + mkxp-z patches), not 3.1.6 | `runtime/subprojects/ruby-3.1.wrap` line 2; `runtime/meson_options.txt` line 1 `mri_version='3.1'` (mkxp-z `dev` @ 3c7c47c) |
 | Azahar | `2126.2` (2026-10-08), `azahar.AppImage` sha256 `af037f8b775198f636b14bcfe63fb401b02246ebfefe1025bb905ce042556960`; needs glibc ≥ 2.38 (not bookworm) | github.com/azahar-emu/azahar/releases/tag/2126.2 |
@@ -139,6 +145,93 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   JIT): while_loop_1M 670 ms, method_call_300k 1028 ms, object_alloc_200k 1637 ms,
   marshal_load_fixture 90 ms.
 
+## M3 findings (2026-11-18)
+- **Renderer architecture (D14):**
+  - The desk analysis proposed rewriting the drawing of each display class, because mkxp-z picks
+    among 31 GLSL programs and the PICA200 has no programmable fragment stage.
+  - A closer count shows the display classes use mkxp-z's own wrapper layer about 400 times and
+    call GL directly only about 19 times. The wrapper layer is TEX/FBO, Quad, ShaderSet and
+    GLState.
+  - So the 3DS build implements that wrapper layer on citro3d instead: each "shader" class becomes
+    a TEV preset. The display classes stay upstream's.
+  - Rewriting the display classes is the fallback if performance problems show up.
+- **Kept from upstream as-is:** the scene graph, the Ruby bindings, `etc/`, config, filesystem and
+  Input.
+- **SDL2 as a utility library** (fork `3ds/deps`):
+  - mkxp-z's Bitmap, Font and file code use SDL surfaces, SDL2_image, SDL2_ttf and RWops (about
+    150 references), so these stay. Video, audio and joystick are off.
+  - Version 2.32.10, not the meson wrap's 2.28.1, because 2.28.1 caps 3DS thread stacks at 16 KiB
+    (`src/thread/n3ds/SDL_systhread.c:30-31`). The Ruby thread needs about 1 MiB.
+  - SDL2_image uses libpng and libjpeg, not stb_image, which peaks at about twice the memory.
+  - `tools/sdlcheck` passes in Azahar:
+    - PNG pixel-exact;
+    - alpha blit with difference 0;
+    - text with the bundled Liberation Sans, 158×25 px at 22 pt;
+    - a 1 MiB thread (heap +1027 KiB) recursing 768 KiB deep;
+    - RWops on `sdmc:/`.
+- **Runtime builds and runs (fork `3ds/CMakeLists.txt`, `3ds/platform`):**
+  - mkxp-z's own sources and the 3DS replacements for main, event loop, filesystem and system
+    helpers, audio (silent) and HTTP make up `mkxp-z.3dsx` (7.6 MB).
+  - The GL function table is bookkeeping only, so nothing is drawn yet.
+  - The engine check (`tests/runtime/enginecheck`) passes in Azahar, 15 checks:
+    - Zlib, Table, Color/Tone/Rect, Marshal;
+    - Bitmap, text size;
+    - Sprite, Viewport, Window;
+    - 30 frames in 0.72 s at RGSS1's 40 FPS;
+    - Input, the RPG module and `System.platform`;
+    - a 256×4096 tileset in Tilemap, `play_movie` (skipped), controller name, `data_directory`.
+  - Pitfalls found: libruby's empty `Init_ext` must not shadow `extinit.a` (Zlib); SDL renames
+    `main`; PhysFS needs a path as argv[0]; meson `-Dc_args` drops the cross file's hard-float
+    flags.
+- **Renderer (fork `3ds/display/gl3ds.cpp`, citro3d):** first picture in Azahar. The render check
+  (`tests/runtime/rendercheck`) passes: fill, clear, `blt` (approximated: alpha blending instead of
+  mkxp-z's compositing shader), `draw_text`, read-back with `get_pixel`, and a scaled sprite in the
+  right orientation at 41 FPS (RGSS1 targets 40).
+  - **PICA facts found on the way:**
+    - Clip z must lie in [-w, 0].
+    - Render targets must be in VRAM (6 MB). Textures move there when first rendered into.
+    - Texture memory starts with the top row (t = 1).
+    - `C3D_SetViewport` resets the scissor.
+    - `DVLB_ParseFile` needs 4-byte-aligned data.
+    - The top screen's framebuffer is rotated: window y runs along framebuffer x, window x against
+      framebuffer y.
+  - `glClear` ignores the viewport (mkxp-z's `fill_rect` is scissor + clear).
+- **Resolution (D15):** the game screen is rendered at 3DS height (640×480 at 320×240,
+  pillarboxed), using mkxp-z's Hires screen scaling. Bitmaps keep full size.
+- **Renderer review fixes (fork https://github.com/michvllni/mkxp-z-3ds/pull/4, two independent
+  reviews):**
+  - **GPU sync:** citro3d queues a frame and runs it at `C3D_FrameEnd`
+    (`renderqueue.c` v1.7.1: `C3D_FrameBegin` without `C3D_FRAME_NONBLOCK` waits for the GX queue;
+    `C3D_RenderTargetDelete` panics inside a frame; `C3D_FrameEnd` copies every linked target
+    with `used` to the display). Textures carry the serial of the last frame that used them;
+    CPU access waits only for that frame, busy linear textures get new memory instead, deleted
+    objects are freed after a GPU wait.
+  - **Command buffer:** libctru's `GPUCMD_Add` breaks into the debugger on overflow; 512 KB
+    buffer, frame submitted early when less than 1024 words are left (`gpuCmdBufOffset`, words).
+  - **VRAM:** creating and filling bitmaps no longer moves them to VRAM (CPU clears); least
+    recently used VRAM textures move back to linear memory when VRAM is full; mkxp-z's pool of
+    disposed bitmaps is 4 MB on the 3DS.
+  - **`Bitmap#blt`:** exact for transparent and opaque destination pixels on the TEV with the
+    destination copy on unit 1 (combiner buffer: a stage's output reaches the buffer input two
+    stages later).
+- **Renderer stage B (fork branch `feat/3ds-gl-effects`):** one TEV effect chain for sprites,
+  planes, tilemap layers and gray (luma via per-channel multiply-add); sprite bush as a CPU
+  geometry split; viewport and screen effects; `Graphics.transition` plain and with a
+  transition image (texture units 1-3 → PICA 0-2, third texture coordinate).
+- **Upstream mkxp-z assumes Hires factors >= 1.** Found with factor 0.5, fixed with 3DS hooks:
+  scissor cache (`GLProperty::set` skips unchanged boxes that apply() scales), screen scene
+  geometry used for both buffer pixels and game coordinates (culled everything beyond 320×240),
+  shader blits projected with the Hires matrix, the gray shader's quad, `snap_to_bitmap` without
+  bitmap twins. Plane's tiled path (no `npot_repeat`) ignored the viewport position. Upstream
+  reports are on hold (Carried over: backlog).
+- **Large textures:** mkxp-z keeps bitmaps above `GL_MAX_TEXTURE_SIZE` as CPU "mega surfaces"; only
+  its tileset atlas needs more than 1024 px (tilesets above about 1300 px at 1024). Per PLAN §3.2
+  and M4 the converter splits tall tilesets and the Tilemap becomes native, so >1024 px textures
+  move to M4; gl3ds reports 4096 until then.
+- **Synthetic title screen (`tests/runtime/titlecheck`):** title image, command window with an
+  RGSS1-layout windowskin, entries and cursor, fades; all generated by `make-assets.rb`, built
+  from the RGSS API only (no RTP or game scripts). Passes in Azahar (7 checks).
+
 ## M2 findings (2026-11-18; console numbers: Measurements, hardware run 2)
 - **Approach (`tools/m2`):** a real game's scripts run headlessly. The game's `Data/Scripts.rxdata` is
   loaded section by section (all except "Main") into `rgss_headless.rb`. That file provides real data
@@ -186,6 +279,14 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   that thread with a large stack (SDL2 n3ds default: 80 KiB).
 - **Later:** Ruby thread preemption (timer without pipes); guard page + exception handler for deep C
   recursion.
+- **Backlog, upstream mkxp-z (on hold, maintainer decision 2026-11-18: no upstream traction for now):**
+  Hires scissor bug. `GLProperty::set` (`src/display/gl/glstate.h`) skips unchanged values, but
+  `GLScissorBox::apply` (`glstate.cpp`) scales the box when the ping-pong framebuffer is bound. A
+  bitmap `fill_rect` with the same logical box then keeps the scaled scissor (at factor 0.5 it
+  fills a quarter). The fork has a 3DS-only hook (fork PR https://github.com/michvllni/mkxp-z-3ds/pull/4).
+  Before reporting, confirm on a desktop build. mkxp-z has no written AI contribution policy
+  (checked the repo, wiki, org profile and issues; the community is on Discord): disclose AI
+  assistance if it is ever filed.
 
 ## Measurements
 Console numbers only, with date, commits of both repos and settings.
