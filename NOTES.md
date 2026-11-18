@@ -137,6 +137,13 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   JIT): while_loop_1M 670 ms, method_call_300k 1028 ms, object_alloc_200k 1637 ms,
   marshal_load_fixture 90 ms.
 
+## Carried over to later milestones
+- **M3 (runtime integration):** set `rb3ds_main_stack_size` (fork `3ds/ruby/shim/include/rb3ds.h`) to the
+  rgss thread's stack size before `RUBY_INIT_STACK` (mkxp-z `binding/binding-mri.cpp:1194`), and create
+  that thread with a large stack (SDL2 n3ds default: 80 KiB).
+- **Later:** Ruby thread preemption (timer without pipes); guard page + exception handler for deep C
+  recursion.
+
 ## Measurements
 Console numbers only, with date, commits of both repos and settings.
 
