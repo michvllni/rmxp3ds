@@ -4,8 +4,17 @@
 # screenshot: four colored quadrants (red top left, green top right, blue bottom left, white bottom
 # right) over a gray background. Result in sdmc:/rmxp3ds/test/render.txt (details render-results.txt).
 results = []
+Dir.mkdir('sdmc:/rmxp3ds/test') unless Dir.exist?('sdmc:/rmxp3ds/test')
+log_path = 'sdmc:/rmxp3ds/test/render-results.txt'
+# Every line is appended at once (file closed after each), so a crash or freeze keeps what ran.
+log_line = lambda do |text|
+  File.open(log_path, 'a') { |f| f.puts(text) }
+  $stderr.puts(text)
+end
+File.write(log_path, "RMXP3DS_TEST render RUNNING\n")
 check = lambda do |name, ok, info = nil|
   results << format('check %s %s%s', name, ok ? 'ok' : 'FAILED', info ? " (#{info})" : '')
+  log_line.call(results.last)
 end
 px = ->(c) { [c.red.round, c.green.round, c.blue.round, c.alpha.round] }
 RED = Color.new(255, 0, 0); GREEN = Color.new(0, 255, 0); BLUE = Color.new(0, 0, 255)
@@ -32,6 +41,7 @@ begin
   (0...32).each { |y| (0...96).each { |x| inked += 1 if t.get_pixel(x, y).alpha > 0 } }
   check.call('draw_text', inked > 50, "#{inked} pixels")
 
+  log_line.call('stage blt')
   # Bitmap#blt compositing (bitmapBlit.frag) with opacity: onto transparent and opaque pixels
   near = ->(a, b) { a.zip(b).all? { |x, y| (x - y).abs <= 3 } }
   src = Bitmap.new(16, 16)
@@ -44,6 +54,7 @@ begin
   odst.blt(0, 0, src, src.rect, 128)
   check.call('blt_opaque_dst', near.call(px.call(odst.get_pixel(8, 8)), [255, 127, 127, 255]), px.call(odst.get_pixel(8, 8)).inspect)
 
+  log_line.call('stage vram')
   # VRAM pressure: 12 window-sized bitmaps drawn into on the GPU (2 MB each padded, VRAM 6 MB);
   # the first ones must keep their content when they are moved out of VRAM
   big = Array.new(12) do |i|
@@ -58,6 +69,7 @@ begin
              firsts.inspect)
   big.each(&:dispose)
 
+  log_line.call('stage many draws')
   # Many GPU draws without a frame end (GPU command buffer): 1500 one-pixel blts with opacity
   # (always drawn on the GPU, two draws each), then a fill of the render target
   many = Bitmap.new(100, 15)
@@ -79,6 +91,7 @@ begin
   check.call('many_targets', targets.all? { |bm| bm.get_pixel(0, 0).green > 100 }, targets.map { |bm| bm.get_pixel(0, 0).green.round }.uniq.inspect)
   targets.each(&:dispose)
 
+  log_line.call('stage window')
   # Window contents at the window's position (simpleColor.vert translation)
   win = Window.new
   win.x = 320; win.y = 240; win.width = 160; win.height = 120
@@ -93,6 +106,7 @@ begin
              "#{snap.width}x#{snap.height} inside #{inside.inspect} outside #{outside.inspect}")
   win.dispose
 
+  log_line.call('stage effects')
   # Effects on the screen (TEV presets), read back with snap_to_bitmap: 100x100 sprites/planes in
   # a grid, sampled in their centers
   solid = lambda do |color|
@@ -148,6 +162,7 @@ begin
   fx.dispose
   objs.each(&:dispose)
 
+  log_line.call('stage transitions')
   # Transitions: fade from black to a blue screen, plain and with a transition map
   # (trans-map.png from make-transmap.rb, a vertical gradient); the new scene must be on screen
   # afterwards
@@ -162,6 +177,7 @@ begin
     Graphics.update
   end
 
+  log_line.call('stage screen scene')
   # Screen scene: 640x480 game screen, quadrants as one 64x64 bitmap scaled 5x
   bg = Sprite.new
   bg.bitmap = Bitmap.new(640, 480)
@@ -181,9 +197,7 @@ rescue Exception => e
 end
 ok = results.none? { |l| l.include?('FAILED') }
 line = "RMXP3DS_TEST render #{ok ? 'PASS' : 'FAIL'} checks=#{results.size}\n"
-Dir.mkdir('sdmc:/rmxp3ds/test') unless Dir.exist?('sdmc:/rmxp3ds/test')
-File.write('sdmc:/rmxp3ds/test/render-results.txt', line + results.join("\n") + "\n")
+log_line.call(line.chomp)
 File.write('sdmc:/rmxp3ds/test/render.txt', line)
-$stderr.puts line, results
 240.times { Graphics.update } # keep the scene on screen for the screenshot
 [s, bg].compact.each { |o| o.bitmap&.dispose; o.dispose } # leave a clean screen (tools/hw3 runs more checks after this one)

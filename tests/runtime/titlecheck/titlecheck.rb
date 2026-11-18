@@ -7,8 +7,17 @@
 # with Graphics.snap_to_bitmap. Result in sdmc:/rmxp3ds/test/title.txt (details
 # title-results.txt).
 results = []
+Dir.mkdir('sdmc:/rmxp3ds/test') unless Dir.exist?('sdmc:/rmxp3ds/test')
+log_path = 'sdmc:/rmxp3ds/test/title-results.txt'
+# Every line is appended at once (file closed after each), so a crash or freeze keeps what ran.
+log_line = lambda do |text|
+  File.open(log_path, 'a') { |f| f.puts(text) }
+  $stderr.puts(text)
+end
+File.write(log_path, "RMXP3DS_TEST title RUNNING\n")
 check = lambda do |name, ok, info = nil|
   results << format('check %s %s%s', name, ok ? 'ok' : 'FAILED', info ? " (#{info})" : '')
+  log_line.call(results.last)
 end
 rgb = ->(c) { [c.red.round, c.green.round, c.blue.round] }
 near = ->(a, b, tol = 4) { a.zip(b).all? { |x, y| (x - y).abs <= tol } }
@@ -55,6 +64,7 @@ begin
   cur = rgb.call(shot.get_pixel(cx + 118, cy + 48))
   check.call('cursor', cur[0] > 70 && cur[2] >= 160, cur.inspect)
   shot.dispose
+  log_line.call('stage fade out')
   # fade out to black
   Graphics.freeze
   objs.each { |o| o.bitmap.dispose if o.respond_to?(:bitmap) && o.bitmap; o.dispose }
@@ -62,6 +72,7 @@ begin
   shot = Graphics.snap_to_bitmap
   check.call('fade_out', rgb.call(shot.get_pixel(320, 240)) == [0, 0, 0], rgb.call(shot.get_pixel(320, 240)).inspect)
   shot.dispose
+  log_line.call('stage fade in')
   # back in for the screenshot
   Graphics.freeze
   objs = build.call
@@ -71,9 +82,7 @@ rescue Exception => e
 end
 ok = results.none? { |l| l.include?('FAILED') }
 line = "RMXP3DS_TEST title #{ok ? 'PASS' : 'FAIL'} checks=#{results.size}\n"
-Dir.mkdir('sdmc:/rmxp3ds/test') unless Dir.exist?('sdmc:/rmxp3ds/test')
-File.write('sdmc:/rmxp3ds/test/title-results.txt', line + results.join("\n") + "\n")
+log_line.call(line.chomp)
 File.write('sdmc:/rmxp3ds/test/title.txt', line)
-$stderr.puts line, results
 240.times { objs[1].update if objs; Graphics.update } # keep the scene on screen for the screenshot
 $rmxp3ds_title_scene = objs # used by tools/hw3/hw3.rb (frame times on this scene)

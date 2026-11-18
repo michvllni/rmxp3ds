@@ -5,14 +5,27 @@
 #   1. measures frame times at the RGSS1 frame rate (40) and uncapped (Graphics.frame_rate 120),
 #   2. keeps running for HOLD seconds (default 60) so HOME and sleep mode can be tried; gaps
 #      between frames show the suspensions,
-# and writes everything to sdmc:/rmxp3ds/test/hw3.txt. Progress and instructions appear on the
-# bottom screen. sdmc:/rmxp3ds/test/hw3-hold.txt (seconds) overrides the hold time; 0 skips it.
+# and writes everything to sdmc:/rmxp3ds/test/hw3.txt. Every line also goes to
+# sdmc:/rmxp3ds/test/hw3-log.txt the moment it is known (appended, file closed each time), so a
+# crash or freeze keeps the log up to that point; each check keeps its own <name>-results.txt the
+# same way. Progress and instructions appear on the bottom screen. sdmc:/rmxp3ds/test/hw3-hold.txt (seconds) overrides the hold time; 0 skips it.
+Dir.mkdir('sdmc:/rmxp3ds/test') unless Dir.exist?('sdmc:/rmxp3ds/test')
+HW3_LOG = 'sdmc:/rmxp3ds/test/hw3-log.txt'
+File.write(HW3_LOG, "hw3 started\n")
 out = []
-log = lambda do |line|
-  out << line
+# appends one line to hw3-log.txt right away (and stderr)
+append = lambda do |line|
+  File.open(HW3_LOG, 'a') { |f| f.puts(line) }
   $stderr.puts line
 end
-say = ->(text) { print text } # bottom screen console (non-blocking message box)
+log = lambda do |line|
+  out << line
+  append.call(line)
+end
+say = lambda do |text| # bottom screen console (non-blocking message box) and the log
+  print text
+  append.call("say: #{text.lines.first.chomp}")
+end
 
 CHECKS = { 'enginecheck' => 'mkxp', 'rendercheck' => 'render', 'titlecheck' => 'title' }.freeze
 CHECKS.each do |name, result_name|
@@ -64,9 +77,13 @@ if hold > 0
     win&.update
     Graphics.update
     now = System.uptime
-    gaps << format('%.1f s after %d frames', now - last, frames) if now - last > 0.5
+    if now - last > 0.5
+      gaps << format('%.1f s after %d frames', now - last, frames)
+      append.call("hold: pause of #{gaps.last}")
+    end
     last = now
     frames += 1
+    append.call(format('hold: %d frames, %.0f s left', frames, t_end - now)) if frames % 200 == 0
   end
   log.call("hold: #{frames} frames in #{hold} s; pauses > 0.5 s: #{gaps.empty? ? 'none' : gaps.join(', ')}")
 end

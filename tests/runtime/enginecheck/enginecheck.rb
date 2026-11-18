@@ -3,8 +3,17 @@
 # RGSS classes, Zlib, fonts, Input, Graphics frame counting, platform. Writes the self-reporting
 # result to sdmc:/rmxp3ds/test/mkxp.txt (details in mkxp-results.txt).
 results = []
+Dir.mkdir('sdmc:/rmxp3ds/test') unless Dir.exist?('sdmc:/rmxp3ds/test')
+log_path = 'sdmc:/rmxp3ds/test/mkxp-results.txt'
+# Every line is appended at once (file closed after each), so a crash or freeze keeps what ran.
+log_line = lambda do |text|
+  File.open(log_path, 'a') { |f| f.puts(text) }
+  $stderr.puts(text)
+end
+File.write(log_path, "RMXP3DS_TEST mkxp RUNNING\n")
 check = lambda do |name, ok, info = nil|
   results << format('check %s %s%s', name, ok ? 'ok' : 'FAILED', info ? " (#{info})" : '')
+  log_line.call(results.last)
 end
 begin
   zl = begin; require 'zlib'; 'loaded'; rescue Exception => e; "#{e.class}: #{e.message}"; end
@@ -45,7 +54,5 @@ rescue Exception => e
 end
 ok = results.none? { |l| l.include?('FAILED') }
 line = "RMXP3DS_TEST mkxp #{ok ? 'PASS' : 'FAIL'} checks=#{results.size}\n"
-Dir.mkdir('sdmc:/rmxp3ds/test') unless Dir.exist?('sdmc:/rmxp3ds/test')
-File.write('sdmc:/rmxp3ds/test/mkxp-results.txt', line + results.join("\n") + "\n")
+log_line.call(line.chomp)
 File.write('sdmc:/rmxp3ds/test/mkxp.txt', line)
-$stderr.puts line, results

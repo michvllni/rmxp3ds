@@ -329,6 +329,22 @@ Console numbers only, with date, commits of both repos and settings.
   copies not waited for, and empty scissor boxes covering the whole target; fixed in
   `5f8fabe6`. Attempt 3 follows.
 
+### 2026-11-18 · Hardware run 3, attempt 3 · New 3DS · M3 checks (`tools/hw3`)
+- **Commits:** rmxp3ds `9c73814`, mkxp-z-3ds `5f8fabe6`; kit defaults.
+- **Result:** the whole console froze (no input, HOME included), no Luma3DS dump, and no log:
+  the checks wrote their results only at the end of each check.
+- **Analysis:**
+  - Not the 3DSync freeze (https://github.com/vllni/3DSync/pull/81: `ptm:u`/`gsp::Lcd` held open
+    for the app's lifetime blocked the system). The runtime opens neither; `cfgu` is closed right
+    after use; `soc:U` is opened only when started via 3dslink.
+  - Likely cause: citro3d's APT hook (`base.c` `C3Di_AptEventHook`) runs on the main thread in
+    `aptMainLoop` and waits for/clears the GX queue on suspend, while the RGSS thread has a frame
+    open (the queue is stopped during a frame, libctru `gxCmdQueueWait` returns at once) and keeps
+    submitting GPU work after the app gave up the GPU. Not confirmed (no log of the stage).
+  - Fixed in mkxp-z-3ds `205732bc` (GPU lock: rendering pauses at a frame boundary for HOME and
+    sleep). Logging changed: every check and `tools/hw3` append each line at once
+    (`<name>-results.txt`, `hw3-log.txt`), so a crash or freeze keeps the log.
+
 ### 2026-11-18 · Hardware run 2 · New 3DS · M2 go/no-go benchmark
 - **Setup:**
   - Kit v3: rmxp3ds `1dbffc0` (bench app, branch `feat/m1-ruby-bench`) with the `tools/m2`
