@@ -30,7 +30,10 @@ order = []
 t = Thread.new { 2.times { |i| order << "t#{i}"; Thread.pass } }
 2.times { |i| order << "m#{i}"; Thread.pass }
 t.join
-check.call("thread_pass(#{order.join(',')})", order.sort == %w[m0 m1 t0 t1] && order != %w[m0 m1 t0 t1])
+# Interleaving is not guaranteed by Ruby in general; on the 3DS it proves that Thread.pass
+# really yields (newlib's sched_yield is a stub there, see runtime/3ds/ruby/README.md).
+interleaved = order != %w[m0 m1 t0 t1]
+check.call("thread_pass(#{order.join(',')})", order.sort == %w[m0 m1 t0 t1] && (interleaved || RUBY_PLATFORM !~ /eabi/))
 q = Queue.new
 consumer = Thread.new { Array.new(3) { q.pop } }
 3.times { |i| q << i }

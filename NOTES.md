@@ -132,4 +132,41 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   marshal_load_fixture 90 ms.
 
 ## Measurements
-_None yet. Console numbers only, with date, commits of both repos and settings._
+Console numbers only, with date, commits of both repos and settings.
+
+### 2026-11-18 · Hardware run 1 · New 3DS
+- **Setup:**
+  - Kit v2: rmxp3ds `62707b9` (branch `feat/m1-ruby-bench`), mkxp-z-3ds `88d0581d` (branch
+    `feat/3ds-ruby`), devkitARM r68, libctru 2.7.0.
+  - Started from the Homebrew Launcher (no 3dslink), `osSetSpeedupEnable(true)`, 1 MiB main stack.
+  - Results from `sdmc:/rmxp3ds/test/`.
+- **hello (M0):** `RMXP3DS_TEST hello PASS frames=60 new3ds=1`. M0's console criterion is met:
+  the binary runs on the console. Deployment via 3dslink is not exercised yet.
+- **rubybench (M1):** PASS. All checks pass on hardware: native pthread, stack limit (~951 KiB of
+  1024), Fiber VFP, threads, Queue, ConditionVariable, Zlib, Marshal fixture + round trip, encodings.
+  - VM init 284 ms; whole run 6.5 s.
+  - heap 88.5 MB, malloc arena 8.3 MB (7.3 MB in use).
+  - GC: 107 runs, 34 heap pages.
+  - Timer pipe warning as expected.
+
+| Benchmark | New 3DS | Azahar 2126.2 | Host Ruby 3.1.3 x86 (EPYC 9V74, median of 3) | 3DS / host |
+|---|---|---|---|---|
+| marshal_load_fixture (75 KB map) | 62 ms | 90 ms | 1.7 ms | ~37× |
+| while_loop_1M | 301 ms | 670 ms | 12.8 ms | ~24× |
+| method_call_300k | 530 ms | 1028 ms | 10.5 ms | ~50× |
+| block_yield_300k | 660 ms | 1099 ms | 9.3 ms | ~71× |
+| ivar_attr_200k | 372 ms | 632 ms | 10.0 ms | ~37× |
+| array_push_each_200k | 700 ms | 1177 ms | 13.6 ms | ~52× |
+| hash_set_get_100k | 442 ms | 637 ms | 14.5 ms | ~30× |
+| string_build_50k | 373 ms | 538 ms | 8.4 ms | ~44× |
+| object_alloc_200k | 1107 ms | 1637 ms | 32.7 ms | ~34× |
+| table_rw_40x30x3_x10 | 304 ms | 491 ms | 9.2 ms | ~33× |
+| marshal_load_fixture_x10 | 633 ms | 994 ms | 15.8 ms | ~40× |
+
+- **Reading:**
+  - CRuby on the New 3DS is roughly 25–70× slower than a current desktop core (median ~37×).
+  - Azahar at 100 % clock is 1.4–2.2× *slower* than the console, the opposite of PLAN §6.1's
+    assumption. CPU clock calibration therefore goes up, not down. Recheck with GPU
+    acceleration; this workspace uses llvmpipe.
+  - Marshal load of a 75 KB map takes 62 ms, so loading a map is acceptable.
+  - Per-frame Ruby cost is the open question for M2.
