@@ -6,9 +6,9 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 ## Status
 - **2026-11-18:** M3 in progress: SDL2 utility libraries for the 3DS (fork `3ds/deps`, test app
   `tools/sdlcheck`); mkxp-z runs on the 3DS with the citro3d renderer (D14, D15): engine, render
-  (23 checks) and synthetic title screen checks pass in Azahar. Hardware run 3 kit ready
-  (`tools/hw3`). Open for the M3 exit: hardware run 3, the title screen of a real RPG Maker XP
-  blank project (local only).
+  (27 checks) and synthetic title screen checks pass in Azahar and on the New 3DS (hardware run
+  3: title scene at 40 FPS, frame work under 8.3 ms, HOME and sleep survive). Open for the M3
+  exit: the title screen of a real RPG Maker XP blank project (local only).
 - **2026-11-18:** M2 done: Essentials v21.1 runs headlessly on the New 3DS (`tools/m2`, hardware
   run 2). Go/no-go: **go, full scope** (docs/DECISIONS.md D13). Next: M3.
 - **2026-11-18:** M1 done: CRuby 3.1.3 cross-built in the fork (`runtime/3ds/ruby`, merged into
@@ -328,6 +328,20 @@ Console numbers only, with date, commits of both repos and settings.
   overflow (more than 15 moves to VRAM in one frame panic in libctru `gxqueue.c`), eviction
   copies not waited for, and empty scissor boxes covering the whole target; fixed in
   `5f8fabe6`. Attempt 3 follows.
+
+### 2026-11-18 · Hardware run 3, attempt 4 · New 3DS · M3 checks (`tools/hw3`) · PASS
+- **Commits:** rmxp3ds `4eafc0a`, mkxp-z-3ds `0c370c89` (`feat/3ds-gl-effects`, code of
+  `205732bc`); settings: kit defaults (RGSS1, Hires factor 0.5 → 320×240 pillarboxed, frame rate 40).
+- **Checks:** engine 15/15, render 27/27, title 7/7 (synthetic title screen), in one app start;
+  engine 1.2 s, render 9.9 s, title 8.2 s.
+- **Frame times, synthetic title scene** (title sprite 640×480, window with three entries and a
+  blinking cursor), 400 frames each:
+  - at 40 FPS: avg 24.98 ms (40.0 fps), median 24.97, p95 25.02, max 25.21 ms;
+  - uncapped target 120 FPS: avg 8.28 ms (120.7 fps), median 8.31, p95 8.34, max 8.37 ms, so
+    the scene's frame work fits in 8.3 ms (limited by the frame limiter, not the work).
+- **HOME and sleep:** 60 s window, 2037 frames; pauses of 8.2 s (HOME) and 0.9 s (lid), the app
+  continued and finished normally: the GPU lock (`205732bc`) holds.
+- Local logs: `3ds-results/hw3-attempt4/` (not in the repo).
 
 ### 2026-11-18 · Hardware run 3, attempt 3 · New 3DS · M3 checks (`tools/hw3`)
 - **Commits:** rmxp3ds `9c73814`, mkxp-z-3ds `5f8fabe6`; kit defaults.
