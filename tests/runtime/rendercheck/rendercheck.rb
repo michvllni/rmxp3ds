@@ -67,6 +67,17 @@ begin
   many.fill_rect(99, 14, 1, 1, BLUE)
   check.call('many_draws', near.call(px.call(many.get_pixel(50, 10)), [0, 255, 0, 254]) && px.call(many.get_pixel(99, 14)) == [0, 0, 255, 255],
              "#{px.call(many.get_pixel(50, 10)).inspect} #{px.call(many.get_pixel(99, 14)).inspect}")
+  # A fill with an empty rectangle draws nothing (an empty scissor box must not disable clipping)
+  many.fill_rect(0, 0, 0, 15, RED)
+  check.call('empty_fill', px.call(many.get_pixel(5, 5))[0] < 10, px.call(many.get_pixel(5, 5)).inspect)
+  # 20 bitmaps become render targets in one frame (GPU queue entries per frame are limited)
+  targets = Array.new(20) do
+    bm = Bitmap.new(32, 32)
+    bm.blt(0, 0, gsrc, gsrc.rect, 128)
+    bm
+  end
+  check.call('many_targets', targets.all? { |bm| bm.get_pixel(0, 0).green > 100 }, targets.map { |bm| bm.get_pixel(0, 0).green.round }.uniq.inspect)
+  targets.each(&:dispose)
 
   # Window contents at the window's position (simpleColor.vert translation)
   win = Window.new

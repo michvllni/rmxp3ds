@@ -195,6 +195,9 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
       (`C3D_SyncTextureCopy`), never `memcpy`.
     - Azahar does not fault on reads near address 0 either: null-pointer bugs in citro3d calls
       (e.g. `C3D_TexBind(1, NULL)`) only show on the console.
+    - citro3d's GX queue holds 32 entries per frame (`gxQueue.maxEntries`); every
+      `C3D_SyncTextureCopy` inside a frame takes two. `gspWaitForPPF` after a copy outside a frame
+      can return early (the event stays latched): wait for the queue instead.
     - Texture memory starts with the top row (t = 1).
     - `C3D_SetViewport` resets the scissor.
     - `DVLB_ParseFile` needs 4-byte-aligned data.
@@ -297,6 +300,10 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 ## Measurements
 Console numbers only, with date, commits of both repos and settings.
 
+- **Commit note:** after fork https://github.com/michvllni/mkxp-z-3ds/pull/5 was merged, the renderer
+  branches were rebased onto `dev`: `3855a84d` → `952f37f9`, `9c9e785e` → `46949580`,
+  `306dd26a` → `f81aa12a` (same changes).
+
 ### 2026-11-18 · Hardware run 3, attempt 1 · New 3DS · M3 checks (`tools/hw3`)
 - **Commits:** rmxp3ds `9a7d5c6`, mkxp-z-3ds `3855a84d` (`feat/3ds-gl-effects`); settings: kit
   defaults (Hires factor 0.5, RGSS1, frame rate 40).
@@ -317,7 +324,10 @@ Console numbers only, with date, commits of both repos and settings.
 - **Cause:** `C3D_TexBind(unit, NULL)` for units 1 and 2: citro3d 1.7.1 reads the texture's
   type there (`texture.c` `C3D_TexBind` → `C3D_TexGetType`); NULL is only valid for unit 0.
   Azahar reads 0 at address 0xc instead of faulting. Fixed in mkxp-z-3ds `5fa7b754` (a dummy
-  texture on unused units). Attempt 3 follows.
+  texture on unused units). An audit for further console-only faults then found a GX queue
+  overflow (more than 15 moves to VRAM in one frame panic in libctru `gxqueue.c`), eviction
+  copies not waited for, and empty scissor boxes covering the whole target; fixed in
+  `5f8fabe6`. Attempt 3 follows.
 
 ### 2026-11-18 · Hardware run 2 · New 3DS · M2 go/no-go benchmark
 - **Setup:**
