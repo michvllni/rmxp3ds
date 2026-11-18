@@ -46,11 +46,14 @@ docs/            PLAN.md, DECISIONS.md
 | What | Command |
 |---|---|
 | Workspace toolchain | `tools/setup-workspace.sh && . ~/volume/.toolchain/env.sh` |
+| Build hello-world | `cmake -S tools/hello -B build/hello -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake" && cmake --build build/hello` |
+| Emulator smoke test | `tests/smoke/azahar-smoke.sh --3dsx build/hello/hello.3dsx --result rmxp3ds/test/hello.txt --expect '^RMXP3DS_TEST hello PASS' --screenshot build/hello-smoke.png` |
 | Lint scripts | `git ls-files '*.sh' \| xargs shellcheck` |
 | Headless emulator | `azahar-headless <file.3dsx>`; screenshots via mcp-azahar |
 | Console | `3dslink -a <3ds-ip> <file.3dsx>`; stdout: `3dslink -s` |
 
-CI (`.github/workflows/ci.yml`): shellcheck, dev container image build. Fill in this table as milestones add targets.
+CI (`.github/workflows/ci.yml`): shellcheck; dev container image build, hello-world build and
+Azahar smoke test inside the image (screenshot uploaded as artifact `hello-smoke`). Fill in this table as milestones add targets.
 
 ## Conventions
 - Conventional Commits; one reviewable topic per PR; docs (README, AGENTS, NOTES, docs/*) updated in
@@ -75,6 +78,15 @@ CI (`.github/workflows/ci.yml`): shellcheck, dev container image build. Fill in 
   that change docs/DECISIONS.md.
 - M2 is a go/no-go gate decided by the maintainer.
 
+## Self-reporting test mode
+Test programs (hello now, the runtime later) write one line `RMXP3DS_TEST <name> PASS|FAIL ...` to
+`sdmc:/rmxp3ds/test/<name>.txt` and, when started via `3dslink -s`, to stdout. If
+`sdmc:/rmxp3ds/test/autoexit` exists they exit by themselves a few seconds after reporting.
+`tests/smoke/azahar-smoke.sh` drives this in headless Azahar (fresh HOME and virtual SD per run).
+
 ## Pitfalls
+- Azahar stays open after a homebrew app exits and aborts on SIGTERM: judge runs by the result
+  file, never by the emulator's exit status. Don't `pkill -f azahar` from a shell whose command
+  line contains "azahar" (it kills itself); stop emulators by PID or process group.
 - `runtime/` uses an HTTPS URL; a local `url.git@github.com:.insteadOf` rewrite is fine.
 - `/opt` in the Coder workspace is not persistent; only `/home/vscode/volume` is.

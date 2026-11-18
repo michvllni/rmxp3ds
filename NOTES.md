@@ -62,5 +62,13 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   llvmpipe, OpenGL) shows "Hello World!" on the top screen, status bar "App: 60 FPS" (emulator, not
   a performance number). Launched manually; mcp-azahar is not configured yet.
 
+- **2026-11-18, workspace (rmxp3ds `feat/m0-hello-smoke`):** `tools/hello` (CMake, devkitPro
+  `3DS.cmake`, `-Werror`) builds; `tests/smoke/azahar-smoke.sh` passes twice in a row
+  (`RMXP3DS_TEST hello PASS frames=60 new3ds=1`, Azahar reports New 3DS by default), negative check
+  (`--expect '^NOPE'`) fails with exit 1, no processes left behind. ~5 s per run.
+- Azahar behaviour (2126.2): stays open (game list) after a 3dsx returns from `main`; SIGTERM
+  makes it abort (exit 134 / SIGSEGV). `setsid` is unreliable for process-group cleanup (it forks
+  if the caller leads a process group); bash job control (`set -m`) gives PGID = `$!`.
+
 ## Measurements
 _None yet. Console numbers only, with date, commits of both repos and settings._
