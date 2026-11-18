@@ -3,7 +3,8 @@
 Runtime and converter to play RPG Maker XP games (primarily Pokémon Essentials fan games) on the
 New Nintendo 3DS, with optional per-layer stereoscopic 3D.
 
-**Status:** early development (milestone M0, dev environment). Nothing playable yet. See
+**Status:** early development (milestone M0: toolchain, CI, a hello-world that runs in headless
+Azahar). Nothing playable yet. See
 [NOTES.md](NOTES.md) for the current state and [docs/PLAN.md](docs/PLAN.md) for the roadmap.
 
 ## Repositories

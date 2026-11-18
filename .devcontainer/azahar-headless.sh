@@ -41,8 +41,15 @@ fi
 if ! xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1; then
   Xvfb "$DISPLAY_NUM" -screen 0 1280x720x24 -nolisten tcp \
     >"${TMPDIR:-/tmp}/xvfb-${DISPLAY_NUM#:}.log" 2>&1 &
+  XVFB_PID=$!
   i=0
   until xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1; do
+    # Our Xvfb died (e.g. another one took the display in the meantime): don't attach to a
+    # foreign server.
+    if ! kill -0 "$XVFB_PID" 2>/dev/null; then
+      echo "azahar-headless: Xvfb on $DISPLAY_NUM exited, see ${TMPDIR:-/tmp}/xvfb-${DISPLAY_NUM#:}.log" >&2
+      exit 1
+    fi
     i=$((i + 1))
     if [ "$i" -gt 50 ]; then
       echo "azahar-headless: Xvfb on $DISPLAY_NUM did not start" >&2
@@ -50,6 +57,11 @@ if ! xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1; then
     fi
     sleep 0.1
   done
+fi
+
+if [ -n "${XVFB_PID:-}" ] && ! kill -0 "$XVFB_PID" 2>/dev/null; then
+  echo "azahar-headless: Xvfb on $DISPLAY_NUM exited (display taken by another server?)" >&2
+  exit 1
 fi
 
 export DISPLAY="$DISPLAY_NUM"

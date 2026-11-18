@@ -28,7 +28,7 @@ jobs:
           git ls-files '*.sh' | xargs shellcheck
 
   devcontainer-image:
-    name: Dev container image
+    name: Dev container image, 3DS build, Azahar smoke test
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -52,3 +52,28 @@ jobs:
             ruby -v
             makerom 2>&1 | head -n1
             cat /opt/tools/.stamps/azahar'
+      # Runs as the runner's UID so the build output in the bind-mounted checkout stays writable.
+      - name: Build hello-world (.3dsx)
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspaces/rmxp3ds" -w /workspaces/rmxp3ds rmxp3ds-dev:ci bash -c '
+              cmake -S tools/hello -B build/hello -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake"
+              cmake --build build/hello'
+      # Headless Azahar with Mesa software rendering (no /dev/dri on hosted runners).
+      - name: Azahar smoke test
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspaces/rmxp3ds" -w /workspaces/rmxp3ds rmxp3ds-dev:ci \
+            tests/smoke/azahar-smoke.sh --3dsx build/hello/hello.3dsx \
+              --result rmxp3ds/test/hello.txt --expect '^RMXP3DS_TEST hello PASS' \
+              --timeout 180 --screenshot build/hello-smoke.png
+      - name: Upload screenshot
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hello-smoke
+          path: |
+            build/hello/hello.3dsx
+            build/hello-smoke.png
+          if-no-files-found: ignore
+          retention-days: 14
