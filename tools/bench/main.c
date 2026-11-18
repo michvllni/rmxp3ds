@@ -164,6 +164,18 @@ static int __attribute__((noinline)) stack_probe(int depth, int limit) {
 	return r;
 }
 
+// rb_protect body: memory growth (KiB) after 20 short-lived Ruby threads. Each thread stack is
+// ~1 MiB; if finished threads are not freed (libsysbase ignores PTHREAD_CREATE_DETACHED,
+// runtime/3ds/ruby shim detaches them) this grows by ~20 MiB.
+static VALUE thread_leak_kb(VALUE unused) {
+	(void)unused;
+	rb_eval_string("Thread.new { 1 }.join"); // first thread: one-time allocations
+	struct mallinfo before = mallinfo();
+	rb_eval_string("20.times { Thread.new { 1 }.join }; sleep 0.05");
+	struct mallinfo after = mallinfo();
+	return LONG2NUM(((long)after.uordblks - (long)before.uordblks) / 1024);
+}
+
 // rb_protect body: returns the pending exception's full message (no ANSI colours).
 static VALUE error_message(VALUE err) {
 	VALUE opts = rb_hash_new();
@@ -247,15 +259,23 @@ int main(void) {
 			int vstate = 0;
 			VALUE vfp_ok = rb_protect(check_coroutine_vfp, Qnil, &vstate);
 			if (vstate) rb_set_errinfo(Qnil);
+			int lstate = 0;
+			VALUE leak = rb_protect(thread_leak_kb, Qnil, &lstate);
+			if (lstate) rb_set_errinfo(Qnil);
+			long leak_kb = lstate ? -1 : NUM2LONG(leak);
+			if (lstate || leak_kb > 4096) status = -1;
 			char ptbuf[96];
 			const char *pt = check_native_pthread(ptbuf, sizeof ptbuf);
 			if (strncmp(pt, "ok", 2) != 0) status = -1;
-			VALUE native = rb_sprintf("check native_pthread %s\n"
+			VALUE native = rb_sprintf("check thread_memory %s (20 threads: %+ld KiB)\n"
+			                          "check native_pthread %s\n",
+			                          (!lstate && leak_kb <= 4096) ? "ok" : "FAILED", leak_kb, pt);
+			native = rb_str_plus(native, rb_sprintf(
 			                          "check native_stack_limit %s (fires at ~%d KiB of %lu)\n"
-			                          "check coroutine_vfp %s\n", pt,
+			                          "check coroutine_vfp %s\n",
 			                          fires_kb < probe_limit ? "ok" : "FAILED", fires_kb,
 			                          (unsigned long)(__stacksize__ / 1024),
-			                          (!vstate && vfp_ok == Qtrue) ? "ok" : "FAILED (d8 not preserved across Fiber switch)");
+			                          (!vstate && vfp_ok == Qtrue) ? "ok" : "FAILED (d8 not preserved across Fiber switch)"));
 			if (fires_kb >= probe_limit || vstate || vfp_ok != Qtrue) status = -1;
 			if (status == 0) status = run_script("rgss_stubs.rb", &out);
 			if (status == 0) status = run_script("bench.rb", &out);

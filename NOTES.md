@@ -124,6 +124,12 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 
   Native `pthread_cond_timedwait` with `CLOCK_MONOTONIC` works. Now `Thread#value`,
   `Thread.pass`, Queue and ConditionVariable work; there is no preemption (timer pipe).
+- **Thread memory leak (fixed):** libsysbase ignores `PTHREAD_CREATE_DETACHED`, so every finished
+  thread kept its ~1 MiB stack. Measured with 30 threads: +30 MB, after the fix +23 KB. The shim
+  now detaches threads in libctru; the bench check `thread_memory` guards it.
+- **Fiber pool:** starts with 2 stacks (Ruby needs at least 2: `fiber_pool_allocate_memory` only
+  allocates while count > 1; 1 hung `ruby_init`).
+- **`File.dirname` of device paths** was missing the device ("/a"); fixed, bench check `device_paths`.
 - **Open:**
   - Deep C recursion (nested `inspect` ~2000 levels) crashes instead of raising.
   - The initial cwd in Azahar is `/` (hbmenu on hardware: unverified).

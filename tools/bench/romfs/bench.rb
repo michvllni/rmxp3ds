@@ -45,6 +45,19 @@ waiter = Thread.new { mx.synchronize { cv.wait(mx) until ready; :woke } }
 sleep 0.01
 mx.synchronize { ready = true; cv.signal }
 check.call('condvar', waiter.value == :woke)
+if RUBY_PLATFORM =~ /eabi/ # libctru device paths (runtime/3ds/ruby patch 0003)
+  paths = {
+    "dirname" => [File.dirname('sdmc:/a/b'), 'sdmc:/a'],
+    "dirname_root" => [File.dirname('sdmc:/a'), 'sdmc:/'],
+    "basename" => [File.basename('romfs:/x/y.rb'), 'y.rb'],
+    "split" => [File.split('sdmc:/a/b'), ['sdmc:/a', 'b']],
+    "expand_dotdot" => [File.expand_path('sdmc:/a/../b'), 'sdmc:/b'],
+    "expand_rel_dir" => [File.expand_path('x', 'romfs:/d'), 'romfs:/d/x'],
+    "absolute" => [File.absolute_path?('romfs:/x'), true]
+  }
+  bad = paths.reject { |_, (got, want)| got == want }
+  check.call("device_paths#{bad.empty? ? '' : bad.inspect}", bad.empty?)
+end
 require 'zlib'
 blob = 'RMXP3DS' * 2000
 check.call('zlib', Zlib::Inflate.inflate(Zlib::Deflate.deflate(blob)) == blob)
