@@ -190,6 +190,38 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 ## Measurements
 Console numbers only, with date, commits of both repos and settings.
 
+### 2026-11-18 · Hardware run 2 · New 3DS · M2 go/no-go benchmark
+- **Setup:**
+  - Kit v3: rmxp3ds `1dbffc0` (bench app, branch `feat/m1-ruby-bench`) with the `tools/m2`
+    harness (as committed in `86460a7`), mkxp-z-3ds `40375ce6` (branch `feat/3ds-ruby`).
+  - Game: Pokémon Essentials v21.1 demo (`Data/` on SD, local copy).
+  - Started from the Homebrew Launcher, `osSetSpeedupEnable(true)`, simulated game clock at
+    30 FPS, default workload (Route 5 and Route 3, 600 frames each; 5 battles).
+- **Result:** PASS. VM init 281 ms, whole run 78 s. malloc 38.7 MB in use (arena 44.8 MB) of a
+  88.5 MB heap.
+
+| Phase | New 3DS | Azahar | Host x86 | 3DS / host |
+|---|---|---|---|---|
+| load 402 script sections (parse + eval) | 8.65 s | 11.2 s | 0.33 s | 26× |
+| new game (Marshal load of game data from SD) | 19.9 s | 11.3 s | 0.12 s | ~165× |
+| A Route 5 logic (96 events) | 5.18 ms/frame (p95 6.37, max 11.5) | 6.8 ms | 0.14 ms | 37× |
+| B Route 5 + Ruby spritesets | 25.1 ms/frame (p95 28.1, max 34.4) | 32.8 ms | 0.72 ms | 35× |
+| A Route 3 logic (30 events) | 2.49 ms/frame (p95 3.40) | 3.1 ms | 0.07 ms | 36× |
+| B Route 3 + Ruby spritesets | 22.2 ms/frame (p95 25.0) | 28.4 ms | 0.66 ms | 34× |
+| C battle (3 vs 3, no visuals) | 115 ms/turn | 120 ms | 3.6 ms | 32× |
+| C damage calc | 3.5 ms | 3.6 ms | 0.11 ms | 32× |
+
+- **Reading:**
+  - Game logic uses 8–16 % of a 30 FPS frame (33.3 ms).
+  - With Essentials' Ruby sprite updates (drawing stubbed), a busy map uses about 75 %.
+  - Host profile of B on Route 5 (660 frames): `TilemapRenderer#update` 0.31 ms/frame,
+    `Sprite_Character#update` 0.19 ms, `Spriteset_Map#update` 0.17 ms. The tilemap is about half
+    of the Ruby spriteset cost.
+  - A battle turn costs ~0.1 s of Ruby: one hitch per turn, between animations.
+  - Startup is slow: ~29 s to a new game. Data loading is slower on the console than in Azahar
+    (SD I/O).
+  - Azahar is only 1.0–1.3× slower than the console for this workload, and faster for SD I/O.
+
 ### 2026-11-18 · Hardware run 1 · New 3DS
 - **Setup:**
   - Kit v2: rmxp3ds `62707b9` (branch `feat/m1-ruby-bench`), mkxp-z-3ds `88d0581d` (branch
