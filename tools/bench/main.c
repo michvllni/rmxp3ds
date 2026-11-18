@@ -15,6 +15,7 @@
 #include <time.h>
 #include <ruby.h>
 #include <ruby/encoding.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -168,13 +169,20 @@ static const char *check_native_pthread(char *buf, size_t size) {
 	return buf;
 }
 
+// Returns a binary (ASCII-8BIT) copy of the bytes of v if it is a String, else "". Results are
+// concatenated outside rb_protect; strings in encodings that are not ASCII-compatible (UTF-16)
+// would make rb_str_plus raise Encoding::CompatibilityError there.
+static VALUE binary_copy(VALUE v) {
+	return RB_TYPE_P(v, T_STRING) ? rb_str_new(RSTRING_PTR(v), RSTRING_LEN(v)) : rb_str_new_cstr("");
+}
+
 // Recurses with ~1 KiB frames until ruby_stack_check() reports an imminent overflow (sets
 // *fired) or hard_limit bytes below top are used; returns the bytes used below top. Checks that
 // CRuby knows the main stack size (runtime/3ds/ruby/patches/0001): without it the check fires
 // never (or at once, with a wrong stack start).
 static size_t __attribute__((noinline)) stack_probe(const char *top, size_t hard_limit, int *fired) {
 	volatile char frame[1000];
-	size_t used = (size_t)(top - (const char *)frame);
+	size_t used = (size_t)((uintptr_t)top - (uintptr_t)frame);
 	frame[0] = 1;
 	if (ruby_stack_check()) {
 		*fired = 1;
@@ -223,11 +231,18 @@ static int run_script(const char *name, VALUE *out) {
 			msg = rb_protect(rb_inspect, err, &st2);
 			if (st2) rb_set_errinfo(Qnil);
 		}
-		*out = st2 ? rb_sprintf("%s: error (state %d), message unavailable\n", buf, state)
-		           : rb_sprintf("%s: %" PRIsVALUE "\n", buf, msg);
+		if (st2 || !RB_TYPE_P(msg, T_STRING)) {
+			*out = rb_sprintf("%s: error (state %d), message unavailable\n", buf, state);
+		} else {
+			// raw bytes: the message may be in any encoding (see binary_copy)
+			*out = rb_str_new_cstr(buf);
+			rb_str_cat_cstr(*out, ": ");
+			rb_str_cat(*out, RSTRING_PTR(msg), RSTRING_LEN(msg));
+			rb_str_cat_cstr(*out, "\n");
+		}
 		return -1;
 	}
-	*out = RB_TYPE_P(v, T_STRING) ? v : rb_str_new_cstr("");
+	*out = binary_copy(v);
 	return 0;
 }
 
@@ -282,12 +297,13 @@ int main(void) {
 			stage("scripts");
 			VALUE out = Qnil;
 			// Native checks first; their lines prefix the script output.
-			// Stack check: must fire, between half the stack and 8 KiB before its end (Ruby
-			// reserves 64 KiB, patch 0001); recursion stops 32 KiB before the end regardless.
+			// Stack check: must fire, after half the stack and before the recursion's hard stop
+			// 32 KiB before the end (Ruby reserves 64 KiB, patch 0001: it fires at ~952 KiB).
+			// Too early: wrong stack start; never: unknown stack size.
 			volatile char stack_top_marker = 0;
 			int fired = 0;
 			size_t used = stack_probe((const char *)&stack_top_marker, __stacksize__ - 32 * 1024, &fired);
-			int stack_ok = fired && used >= __stacksize__ / 2 && used <= __stacksize__ - 8 * 1024;
+			int stack_ok = fired && used >= __stacksize__ / 2;
 			int vstate = 0;
 			VALUE vfp_ok = rb_protect(check_coroutine_vfp, Qnil, &vstate);
 			if (vstate) rb_set_errinfo(Qnil);

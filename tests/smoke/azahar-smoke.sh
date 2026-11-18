@@ -91,10 +91,30 @@ claim_display() {
 for spec in "${SD_FILES[@]}"; do
   src="${spec%%=*}" dest="${spec#*=}"
   case "/$dest/" in
-    //*|*/../*) echo "azahar-smoke.sh: --sd-file DEST must be relative without '..': $dest" >&2; exit 2 ;;
+    //*|*/../*|*//|/./) echo "azahar-smoke.sh: --sd-file DEST must be a relative file path without '..': $dest" >&2; exit 2 ;;
   esac
   [ -f "$src" ] || { echo "azahar-smoke.sh: --sd-file source $src not found" >&2; exit 2; }
 done
+
+PGID=""
+AZ_HOME=""
+# shellcheck disable=SC2317 # invoked via trap
+# cleanup: stops the emulator's process group (Azahar, and Xvfb if it started it) and removes
+# the temporary HOME unless --keep-home.
+cleanup() {
+  if [ -n "$PGID" ]; then
+    kill -TERM -- "-$PGID" 2>/dev/null || true
+    sleep 1
+    kill -KILL -- "-$PGID" 2>/dev/null || true
+    # wait until the group is gone, so a next run can reuse the display
+    for _ in $(seq 50); do pgrep -g "$PGID" >/dev/null || break; sleep 0.1; done
+  fi
+  if [ -n "$AZ_HOME" ]; then
+    if [ "$KEEP" -eq 1 ]; then echo "azahar-smoke.sh: kept HOME $AZ_HOME"; else rm -rf "$AZ_HOME"; fi
+  fi
+  if [ -n "$CLAIM" ]; then rmdir "$CLAIM" 2>/dev/null || true; fi
+}
+trap cleanup EXIT
 
 AZ_HOME="$(mktemp -d)"
 SDMC="$AZ_HOME/.local/share/azahar-emu/sdmc"
@@ -110,22 +130,6 @@ if [ -f "$REPO/.devcontainer/azahar/qt-config.ini" ]; then
   cp "$REPO/.devcontainer/azahar/qt-config.ini" "$AZ_HOME/.config/azahar-emu/"
 fi
 
-PGID=""
-# shellcheck disable=SC2317 # invoked via trap
-# cleanup: stops the emulator's process group (Azahar, and Xvfb if it started it) and removes
-# the temporary HOME unless --keep-home.
-cleanup() {
-  if [ -n "$PGID" ]; then
-    kill -TERM -- "-$PGID" 2>/dev/null || true
-    sleep 1
-    kill -KILL -- "-$PGID" 2>/dev/null || true
-    # wait until the group is gone, so a next run can reuse the display
-    for _ in $(seq 50); do pgrep -g "$PGID" >/dev/null || break; sleep 0.1; done
-  fi
-  if [ "$KEEP" -eq 1 ]; then echo "azahar-smoke.sh: kept HOME $AZ_HOME"; else rm -rf "$AZ_HOME"; fi
-  if [ -n "$CLAIM" ]; then rmdir "$CLAIM" 2>/dev/null || true; fi
-}
-trap cleanup EXIT
 [ -n "$DISPLAY_NUM" ] || claim_display
 
 # screenshot: saves the X display to --screenshot, if requested.
