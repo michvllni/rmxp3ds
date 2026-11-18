@@ -5,7 +5,7 @@ New Nintendo 3DS, with optional per-layer stereoscopic 3D.
 
 **Status:** early development. M0 (toolchain, CI) and M1 (CRuby 3.1.3 on the 3DS) run on the
 console. M2 (go/no-go benchmark): a real game's scripts run headlessly on the emulated 3DS
-(`tools/m2`); console measurements pending. Nothing playable yet. See
+(`tools/m2`) on the console; decision: continue (docs/DECISIONS.md D13). Nothing playable yet. See
 [NOTES.md](NOTES.md) for the current state and [docs/PLAN.md](docs/PLAN.md) for the roadmap.
 
 ## Repositories

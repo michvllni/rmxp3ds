@@ -4,8 +4,8 @@
 Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` from PLAN §10.
 
 ## Status
-- **2026-11-18:** M2: Essentials v21.1 runs headlessly on the emulated 3DS (`tools/m2`), with
-  emulator numbers below. Console run (hardware run 2) pending, then the go/no-go decision.
+- **2026-11-18:** M2 done: Essentials v21.1 runs headlessly on the New 3DS (`tools/m2`, hardware
+  run 2). Go/no-go: **go, full scope** (docs/DECISIONS.md D13). Next: M3.
 - **2026-11-18:** M1 done: CRuby 3.1.3 cross-built in the fork (`runtime/3ds/ruby`, merged into
   `dev` as `a807e577`, mkxp-z-3ds PR #1), `tools/bench` passes in Azahar and on the New 3DS
   (hardware run 1, with M0's hello). `runtime/` points at `a807e577`.
@@ -139,7 +139,7 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   JIT): while_loop_1M 670 ms, method_call_300k 1028 ms, object_alloc_200k 1637 ms,
   marshal_load_fixture 90 ms.
 
-## M2 findings (2026-11-18, host + emulator; console run pending)
+## M2 findings (2026-11-18; console numbers: Measurements, hardware run 2)
 - **Approach (`tools/m2`):** a real game's scripts run headlessly. The game's `Data/Scripts.rxdata` is
   loaded section by section (all except "Main") into `rgss_headless.rb`. That file provides real data
   classes (Table, Color, Tone and Rect with RGSS Marshal formats) and quiet stand-ins for graphics,
