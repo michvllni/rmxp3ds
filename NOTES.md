@@ -70,5 +70,29 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   makes it abort (exit 134 / SIGSEGV). `setsid` is unreliable for process-group cleanup (it forks
   if the caller leads a process group); bash job control (`set -m`) gives PGID = `$!`.
 
+## M1 research: CRuby 3.1.3 on 3DS (2026-11-18, desk research, nothing built yet)
+- **Prior art:** no CRuby on 3DS; RGSS-on-3DS projects use mruby
+  (github.com/Disclored/RPG-Maker-XP-for-3DS, github.com/roperario233/rgss1-3ds). CRuby 3.1 on
+  newlib targets: mkxp-z Switch port (github.com/Cheeenxiii/rmxp-modern
+  `patches/mkxp-z-switch/0002-ruby-libnx.patch`, GPL-2.0+, emulator only), Vita ports
+  github.com/Asukate/mkxp-z-vita (`deps/ruby-vita-a2d396e-clean.patch`, GPL-2.0+, ran on hardware)
+  and github.com/Pinol0/LISA-Vita (Ruby 3.1.6, GPL-2.0). Licenses compatible with the fork; record
+  in THIRD_PARTY.md before reusing any code.
+- **Toolchain facts (verified in the image):** devkitARM `libsysbase.a` implements `pthread_*`,
+  `clock_gettime`, `nanosleep`, `getcwd` on libctru `__syscall_thread_create`; no `dlopen`, `mmap`,
+  `sigaction`, `sys/mman.h`. Ruby 3.1 has no `thread_none.c` (added in 3.2).
+- **Configure (proposal):** `--host=arm-none-eabi --disable-shared --with-static-linked-ext
+  --disable-dln --disable-jit-support --disable-rubygems --without-gmp --with-coroutine=arm32`,
+  ext zlib only (RGSS1 needs Marshal = core, Zlib = ext; mkxp-z `binding/binding-mri.cpp:288`),
+  `-specs=3dsx.specs` in LDFLAGS (link tests), `ac_cv_*` overrides for fork/mmap/sigaction/dlopen.
+- **Expected patches:** shim for `sys/mman.h`/`waitpid`/`pthread_kill`/`pipe`; stack bounds
+  (`ruby_init_stack` finds no size → overflow detection off); no signal-based timer; arm32
+  coroutine must save d8–d15 under hard-float AAPCS (Asukate patch); devkitARM short enums break
+  `compile.c` `IS_INSN_ID` (Vita report, short enums confirmed with `_Static_assert`); transient
+  heap 32 MB → 4 MB; `sdmc:/` as absolute path; optional `PS_GenerateRandomBytes` seeding.
+- **Risks:** stack sizes (libctru main thread 32 KB, SDL2 n3ds threads 80 KB default); GVL hand-off
+  on the 3DS app core (no time slicing between equal priorities, unverified); app memory for .3dsx
+  on New 3DS (unverified); encoding tables size; libctru 2.7.1 (2026-11-01) newer than pinned 2.7.0.
+
 ## Measurements
 _None yet. Console numbers only, with date, commits of both repos and settings._
