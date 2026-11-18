@@ -115,9 +115,16 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 - **Works (Azahar):** VM init 0.8 s; scripts from `sdmc:/` and `romfs:/`; Marshal of the
   synthetic map (75 KB, digest verified); Zlib; Fiber; `Enumerator#next`; Shift_JIS; `sleep`;
   `Time`; `Dir.glob`; `Random`.
+- **Threads (fixed):** four causes were stacked on top of each other:
+  1. Ruby raised NotImplementedError in every new native thread (no `STACKADDR_AVAILABLE`).
+  2. Thread stacks were 32 KiB (newlib has no `PTHREAD_STACK_MIN`).
+  3. libctru creates pthreads at priority 0x3F (libctru 2.7.0 `source/system/syscalls.c:194-209`),
+     and the 3DS never runs lower priorities while a higher one is runnable.
+  4. newlib's `sched_yield` is an ENOSYS stub.
+
+  Native `pthread_cond_timedwait` with `CLOCK_MONOTONIC` works. Now `Thread#value`,
+  `Thread.pass`, Queue and ConditionVariable work; there is no preemption (timer pipe).
 - **Open:**
-  - `Thread.new{}.value` hangs. The timer pipe fails ("scheduling broken"), and it's unclear
-    whether libsysbase `pthread_cond_timedwait` honours `CLOCK_MONOTONIC`.
   - Deep C recursion (nested `inspect` ~2000 levels) crashes instead of raising.
   - The initial cwd in Azahar is `/` (hbmenu on hardware: unverified).
 - **Emulator timings are not performance numbers.** For the record (Azahar 2126.2, 100 % clock,
