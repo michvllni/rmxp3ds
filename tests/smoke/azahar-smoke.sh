@@ -60,13 +60,23 @@ fi
 case "$TIMEOUT" in ''|*[!0-9]*) echo "azahar-smoke.sh: --timeout must be a number" >&2; exit 2 ;; esac
 FILE="$(cd "$(dirname "$FILE")" && pwd)/$(basename "$FILE")"
 
-# free_display: prints the first display from :100 without an X socket or lock file.
-free_display() {
+CLAIM=""
+# claim_display: sets DISPLAY_NUM to the first display from :100 without an X socket or lock file
+# and claims it atomically (mkdir), so parallel smoke runs never pick the same one.
+claim_display() {
   local n=100
-  while [ -e "/tmp/.X11-unix/X$n" ] || [ -e "/tmp/.X$n-lock" ]; do n=$((n + 1)); done
-  printf ':%s' "$n"
+  while [ "$n" -lt 400 ]; do
+    if [ ! -e "/tmp/.X11-unix/X$n" ] && [ ! -e "/tmp/.X$n-lock" ] \
+       && mkdir "/tmp/.rmxp3ds-smoke-X$n" 2>/dev/null; then
+      CLAIM="/tmp/.rmxp3ds-smoke-X$n"
+      DISPLAY_NUM=":$n"
+      return 0
+    fi
+    n=$((n + 1))
+  done
+  echo "azahar-smoke.sh: no free X display between :100 and :399" >&2
+  exit 1
 }
-[ -n "$DISPLAY_NUM" ] || DISPLAY_NUM="$(free_display)"
 
 AZ_HOME="$(mktemp -d)"
 SDMC="$AZ_HOME/.local/share/azahar-emu/sdmc"
@@ -90,8 +100,10 @@ cleanup() {
     for _ in $(seq 50); do pgrep -g "$PGID" >/dev/null || break; sleep 0.1; done
   fi
   if [ "$KEEP" -eq 1 ]; then echo "azahar-smoke.sh: kept HOME $AZ_HOME"; else rm -rf "$AZ_HOME"; fi
+  if [ -n "$CLAIM" ]; then rmdir "$CLAIM" 2>/dev/null || true; fi
 }
 trap cleanup EXIT
+[ -n "$DISPLAY_NUM" ] || claim_display
 
 # screenshot: saves the X display to --screenshot, if requested.
 screenshot() {

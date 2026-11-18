@@ -107,7 +107,7 @@ Everything runs inside the dev container, so the loop is identical on the Fedora
 - **Emulator:** Azahar AppImage (extracted) started via `azahar-headless`, which runs it on an Xvfb display (`$AZAHAR_DISPLAY`, default `:99`). Uses the host iGPU through `/dev/dri` if available, otherwise Mesa software rendering. Audio off.
 - **Settings:** a committed `qt-config.ini` (`.devcontainer/azahar/`) is seeded on container creation, so every run uses the same model, CPU clock and renderer.
 - **Control:** mcp-azahar launches `azahar-headless`, sends input, takes screenshots (from the Xvfb display) and changes settings. Claude Code uses it for interactive debugging: launch build → press buttons → inspect screenshot → fix.
-- **Self-reporting runtime test mode:** a test script on the (virtual) SD card drives the runtime; it writes logs, timings and framebuffer dumps to the SD card and exits. The same tests run unchanged on the real console (3dslink, `3dslink -s` for stdout, ftpd for files).
+- **Self-reporting runtime test mode:** a test script on the (virtual) SD card drives the runtime; it writes logs, timings and framebuffer dumps to the SD card and exits. The same tests run unchanged on the real console (3dslink, `3dslink -s` for stdout/stderr, ftpd for files).
 - **Parallel runs (tower):** one instance per display and HOME directory (e.g. `AZAHAR_DISPLAY=:100 HOME=/tmp/az1`), so configs and virtual SD cards don't collide.
 - **Split of responsibilities:** mcp-azahar for interactive exploration and emulator control; runtime test mode for repeatable tests, CI and real-hardware runs. Performance numbers only from the console.
 

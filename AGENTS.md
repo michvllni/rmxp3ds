@@ -50,7 +50,7 @@ docs/            PLAN.md, DECISIONS.md
 | Emulator smoke test | `tests/smoke/azahar-smoke.sh --3dsx build/hello/hello.3dsx --result rmxp3ds/test/hello.txt --expect '^RMXP3DS_TEST hello PASS' --screenshot build/hello-smoke.png` |
 | Lint scripts | `git ls-files '*.sh' \| xargs shellcheck` |
 | Headless emulator | `azahar-headless <file.3dsx>`; screenshots via mcp-azahar |
-| Console | `3dslink -a <3ds-ip> <file.3dsx>`; stdout: `3dslink -s` |
+| Console | `3dslink -a <3ds-ip> <file.3dsx>`; test output (stderr): `3dslink -s` |
 
 CI (`.github/workflows/ci.yml`): shellcheck; dev container image build, hello-world build and
 Azahar smoke test inside the image (screenshot uploaded as artifact `hello-smoke`). Fill in this table as milestones add targets.
