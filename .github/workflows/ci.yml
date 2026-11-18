@@ -88,6 +88,21 @@ jobs:
               --sd-file tools/bench/romfs/rgss_stubs.rb=rmxp3ds/test/rgss_stubs.rb \
               --sd-file build/bench/romfs/Map001.rxdata=rmxp3ds/test/Map001.rxdata \
               --timeout 600 --screenshot build/bench-smoke.png
+      # M2 pipeline with a synthetic game (no game content): game scripts from Scripts.rxdata in
+      # the headless RGSS environment, on the host and in Azahar; both must compute the same digest.
+      - name: M2 pipeline test (synthetic game, host + Azahar)
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspaces/rmxp3ds" -w /workspaces/rmxp3ds rmxp3ds-dev:ci bash -c '
+              set -euo pipefail
+              ruby tests/fixtures/make-game.rb --out build/m2/synthetic-game
+              host="$(tools/m2/m2.sh host --game build/m2/synthetic-game --bench synthetic 2>&1)" \
+                || { echo "$host"; exit 1; }
+              echo "$host"
+              digest="$(sed -n "s/^synthetic .* digest=\([0-9]*\) .*/\1/p" <<<"$host")"
+              [ -n "$digest" ] || { echo "no digest from the host run" >&2; exit 1; }
+              tools/m2/m2.sh azahar --game build/m2/synthetic-game --bench synthetic \
+                --env "EXPECT_DIGEST=$digest" --env REQUIRE_DIGEST=1 --timeout 300'
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

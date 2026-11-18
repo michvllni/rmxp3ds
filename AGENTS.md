@@ -20,7 +20,7 @@ Status, findings, measurements, sources: [NOTES.md](NOTES.md).
 .github/         CI workflows
 runtime/         submodule: mkxp-z-3ds
 convert/         converter (Ruby)                      — from M5
-tools/           setup-workspace.sh, bench/, fixture generators
+tools/           setup-workspace.sh, bench/ (Ruby test app), m2/ (headless game harness, M2)
 tests/           fixtures (synthetic only), golden images
 docs/            PLAN.md, DECISIONS.md
 ```
@@ -52,12 +52,15 @@ docs/            PLAN.md, DECISIONS.md
 | Ruby test/bench app | `cmake -S tools/bench -B build/bench -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake" && cmake --build build/bench` |
 | Ruby test in Azahar | `tests/smoke/azahar-smoke.sh --3dsx build/bench/bench.3dsx --result rmxp3ds/test/rubybench.txt --expect '^RMXP3DS_TEST rubybench PASS' --timeout 600` (add `--sd-file SRC=rmxp3ds/test/NAME` to run scripts/fixtures from SD) |
 | Synthetic map fixture | `ruby tests/fixtures/make-rxdata.rb --out FILE` |
+| Synthetic game (M2 pipeline) | `ruby tests/fixtures/make-game.rb --out build/m2/synthetic-game` |
+| Headless game benchmark (M2) | `tools/m2/m2.sh host\|azahar --game DIR [--bench essentials\|synthetic] [--env K=V]`; `tools/m2/m2.sh kit --out DIR` for the console (see `--help`) |
 | Lint scripts | `git ls-files '*.sh' \| xargs shellcheck` |
 | Headless emulator | `azahar-headless <file.3dsx>`; screenshots via mcp-azahar |
 | Console | `3dslink -a <3ds-ip> <file.3dsx>`; test output (stderr): `3dslink -s` |
 
 CI (`.github/workflows/ci.yml`): shellcheck; dev container image build, hello-world build and
-Azahar smoke test, CRuby 3DS build, Ruby test/bench in Azahar with scripts from SD, all inside
+Azahar smoke test, CRuby 3DS build, Ruby test/bench in Azahar with scripts from SD, M2 pipeline
+with a synthetic game (host and Azahar digests must match), all inside
 the image (`.3dsx` and screenshots uploaded as artifact `smoke-tests`). Fill in this table as milestones add targets.
 
 ## Conventions
@@ -99,6 +102,10 @@ SD (`--sd-file`) override the romfs copies without rebuilding. If `sdmc:/rmxp3ds
 that script (after its native checks): the entry point for other Ruby test programs.
 
 ## Pitfalls
+- Headless game scripts (`tools/m2/rgss_headless.rb`): stand-ins must not define
+  `respond_to_missing?` (it makes `defined?` lie and games skip their own aliases), and the game
+  clock (`System.uptime`) only advances with `Graphics.update`: a loop that polls the clock
+  without drawing frames never ends.
 - Azahar stays open after a homebrew app exits and aborts on SIGTERM: judge runs by the result
   file, never by the emulator's exit status. Don't `pkill -f azahar` from a shell whose command
   line contains "azahar" (it kills itself); stop emulators by PID or process group.
