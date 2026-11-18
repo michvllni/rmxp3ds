@@ -67,6 +67,7 @@ RUN arm-none-eabi-gcc --version >/dev/null \
 
 # Non-root user for local Docker and CI (devcontainer CLI maps it to the host UID). /opt/tools is
 # root-owned, so gems go to GEM_HOME in the user's home (set above).
+# Run `gem`/`bundle` as `dev`, never as root, or root-owned files end up in /home/dev/.gem.
 RUN useradd --create-home --shell /bin/bash --uid 1000 dev
 USER dev
 WORKDIR /workspaces/rmxp3ds

@@ -89,7 +89,7 @@ registry_token() {
 # install_devkitpro IMAGE DEST: extracts /opt/devkitpro of the linux/amd64 variant of IMAGE
 # (name:tag@sha256:digest) into DEST, applying layer whiteouts. Skips if DEST is stamped with IMAGE.
 install_devkitpro() {
-  local image="$1" dest="$2" repo digest token accept manifest layers layer media tmp wh target
+  local image="$1" dest="$2" repo digest token accept manifest layers layer media tmp wh target patterns
   if [ "$(cat "$dest/.rmxp3ds-image" 2>/dev/null || true)" = "$image" ]; then
     echo "devkitpro: up to date"
     return
@@ -108,8 +108,10 @@ install_devkitpro() {
   # Leftovers of an earlier failed run, then a temp dir removed on any exit from here on.
   rm -rf "$(dirname "$dest")"/.dkp.*
   tmp="$(mktemp -d "$(dirname "$dest")/.dkp.XXXXXX")"
+  local qtmp
+  printf -v qtmp '%q' "$tmp"
   # shellcheck disable=SC2064 # expand $tmp now: it is local to this function
-  trap "rm -rf '$tmp'" EXIT
+  trap "rm -rf $qtmp" EXIT
   mkdir -p "$tmp/root"
   while read -r layer media; do
     case "$media" in
@@ -119,10 +121,15 @@ install_devkitpro() {
     curl -fsSL --retry 3 -H "Authorization: Bearer $token" -o "$tmp/layer.tgz" \
       "https://registry-1.docker.io/v2/$repo/blobs/$layer"
     echo "${layer#sha256:}  $tmp/layer.tgz" | sha256sum -c --quiet -
-    # Only opt/devkitpro is needed: skip layers without it, let every other tar error fail.
-    # (grep without -q: an early exit would SIGPIPE tar and fail the pipeline under pipefail)
-    if tar -tzf "$tmp/layer.tgz" | grep '^opt/devkitpro' >/dev/null; then
-      tar -xzf "$tmp/layer.tgz" -C "$tmp/root" --no-same-owner --wildcards 'opt/devkitpro*'
+    # Only opt/devkitpro (and whiteouts directly in opt/, which may delete it) is needed: skip
+    # layers without it. The listing goes to a file so a tar error fails the script (set -e).
+    tar -tzf "$tmp/layer.tgz" >"$tmp/list"
+    # tar fails if a pattern matches nothing, so pass only the patterns this layer contains.
+    patterns=()
+    if grep -q '^opt/devkitpro' "$tmp/list"; then patterns+=('opt/devkitpro*'); fi
+    if grep -q '^opt/\.wh\.' "$tmp/list"; then patterns+=('opt/.wh.*'); fi
+    if [ ${#patterns[@]} -gt 0 ]; then
+      tar -xzf "$tmp/layer.tgz" -C "$tmp/root" --no-same-owner --wildcards "${patterns[@]}"
     fi
     rm -f "$tmp/layer.tgz"
     # Whiteouts: .wh.NAME deletes NAME from lower layers; .wh..wh..opq empties the directory.

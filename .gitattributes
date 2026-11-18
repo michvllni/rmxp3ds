@@ -2,4 +2,7 @@
 # Scripts are copied into the Linux image and run on Linux: keep LF on every platform.
 *.sh text eol=lf
 Dockerfile text eol=lf
-.devcontainer/** text eol=lf
+.devcontainer/**/*.json text eol=lf
+.devcontainer/**/*.txt text eol=lf
+.devcontainer/**/*.ini text eol=lf
+.devcontainer/**/*.md text eol=lf
