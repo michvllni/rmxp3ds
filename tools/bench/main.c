@@ -5,7 +5,10 @@
 //   sdmc:/rmxp3ds/test/rubybench-results.txt  full output (checks, timings, GC stats, errors)
 // Both are also shown on the top screen and written to stderr (3dslink -s).
 // Script lookup: sdmc:/rmxp3ds/test/<name>.rb first (run scripts from SD without rebuilding),
-// then romfs:/<name>.rb. sdmc:/rmxp3ds/test/autoexit: exit a few seconds after reporting.
+// then romfs:/<name>.rb. If sdmc:/rmxp3ds/test/main.rb exists, only that runs (after the native
+// checks) instead of rgss_stubs.rb + bench.rb: an entry point for other test programs, e.g. the
+// M2 benchmark with a game from SD. sdmc:/rmxp3ds/test/autoexit: exit a few seconds after
+// reporting.
 #include <3ds.h>
 #include <malloc.h>
 #include <pthread.h>
@@ -277,8 +280,12 @@ int main(void) {
 			                          (unsigned long)(__stacksize__ / 1024),
 			                          (!vstate && vfp_ok == Qtrue) ? "ok" : "FAILED (d8 not preserved across Fiber switch)"));
 			if (fires_kb >= probe_limit || vstate || vfp_ok != Qtrue) status = -1;
-			if (status == 0) status = run_script("rgss_stubs.rb", &out);
-			if (status == 0) status = run_script("bench.rb", &out);
+			if (status == 0 && access(TEST_DIR "/main.rb", F_OK) == 0) {
+				status = run_script("main.rb", &out);
+			} else {
+				if (status == 0) status = run_script("rgss_stubs.rb", &out);
+				if (status == 0) status = run_script("bench.rb", &out);
+			}
 			out = rb_str_plus(native, NIL_P(out) ? rb_str_new_cstr("") : out);
 			detail = out;
 			rb_gc_register_address(&detail);

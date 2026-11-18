@@ -95,7 +95,8 @@ display per run).
 `tools/bench` appends progress markers to `sdmc:/rmxp3ds/test/rubybench-stage.txt` and, without
 3dslink, redirects stderr (Ruby `[BUG]` reports, warnings) to `rubybench-stderr.txt`; run the
 smoke script with `--keep-home` and read them from the kept virtual SD. Ruby scripts placed on
-SD (`--sd-file`) override the romfs copies without rebuilding.
+SD (`--sd-file`) override the romfs copies without rebuilding. If `sdmc:/rmxp3ds/test/main.rb` exists, `bench.3dsx` runs only
+that script (after its native checks): the entry point for other Ruby test programs.
 
 ## Pitfalls
 - Azahar stays open after a homebrew app exits and aborts on SIGTERM: judge runs by the result
