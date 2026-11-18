@@ -4,6 +4,8 @@
 Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` from PLAN §10.
 
 ## Status
+- **2026-11-18:** M2: Essentials v21.1 runs headlessly on the emulated 3DS (`tools/m2`), with
+  emulator numbers below. Console run (hardware run 2) pending, then the go/no-go decision.
 - **2026-11-18:** M1 done: CRuby 3.1.3 cross-built in the fork (`runtime/3ds/ruby`, merged into
   `dev` as `a807e577`, mkxp-z-3ds PR #1), `tools/bench` passes in Azahar and on the New 3DS
   (hardware run 1, with M0's hello). `runtime/` points at `a807e577`.
@@ -136,6 +138,47 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 - **Emulator timings are not performance numbers.** For the record (Azahar 2126.2, 100 % clock,
   JIT): while_loop_1M 670 ms, method_call_300k 1028 ms, object_alloc_200k 1637 ms,
   marshal_load_fixture 90 ms.
+
+## M2 findings (2026-11-18, host + emulator; console run pending)
+- **Approach (`tools/m2`):** a real game's scripts run headlessly. The game's `Data/Scripts.rxdata` is
+  loaded section by section (all except "Main") into `rgss_headless.rb`. That file provides real data
+  classes (Table, Color, Tone and Rect with RGSS Marshal formats) and quiet stand-ins for graphics,
+  input and audio, plus mkxp-z's RGSS1 `RPG` module (decoded from the runtime's
+  `binding/module_rpg1.rb.xxd`, not stored here). A benchmark script then drives the game's own
+  classes. The game is Pokémon Essentials v21.1 (its demo game, local only, never in the repo).
+  CI runs the same pipeline with a synthetic game (`tests/fixtures/make-game.rb`), and host and
+  Azahar must compute the same digest.
+- **Headless pitfalls found:**
+  - Essentials v21 is time-based (`System.uptime`), so the stand-in clock advances one frame per
+    `Graphics.update` (`SIM_FPS`, default 30). With a wall clock, results would depend on machine
+    speed.
+  - A catch-all `respond_to_missing?` makes `defined?(x.y)` true, so Essentials skipped its own
+    `Graphics.update` alias and never counted frames. Stand-ins answer only `method_missing`.
+  - `Battle::DebugSceneNoVisuals#pbUpdate` is empty, but `pbShowAbilitySplash` waits one second of
+    `System.uptime` in a loop: the benchmark makes it pass a frame, like the real scene's `pbUpdate`.
+- **Port bug found:** `Kernel#load` failed with `ENOTSOCK` because it clears `O_NONBLOCK` via
+  `fcntl(F_SETFL)` and libctru's `fcntl` only handles sockets. Fork: `ac_cv_func_fcntl=no`.
+- **Workload** (`essentials_bench.rb`):
+  - A: overworld logic per frame on Route 5 (map 41, 96 events) and Route 3 (map 31, 30 events),
+    with the player debug-walking in a square and all events updating.
+  - B: A plus Essentials' Ruby sprite updates (spritesets, including its Ruby tilemap renderer,
+    with the drawing itself stubbed).
+  - C: five 3-vs-3 AI trainer battles at level 50 without visuals.
+- **Emulator results** (Azahar 2126.2, not performance numbers; M1 measured Azahar 1.4–2.2× slower
+  than the console):
+
+| Phase | Host x86 Ruby 3.1.3 | Azahar | Azahar / host |
+|---|---|---|---|
+| load 402 script sections | 0.33 s | 11.2 s | 34× |
+| new game (data loading) | 0.12 s | 11.3 s | ~95× |
+| A Route 5 logic | 0.14 ms/frame | 6.8 ms (p95 8.8) | 49× |
+| B Route 5 + Ruby spritesets | 0.72 ms/frame | 32.8 ms (p95 36.3) | 46× |
+| A Route 3 logic | 0.07 ms/frame | 3.1 ms (p95 4.1) | 44× |
+| B Route 3 + Ruby spritesets | 0.66 ms/frame | 28.4 ms (p95 31.9) | 43× |
+| C battle | 3.6 ms/turn | 120 ms/turn | 34× |
+| C damage calc | 0.11 ms | 3.6 ms | 34× |
+
+  Memory in Azahar: 38.7 MB malloc in use after everything (8.3 MB for M1's bench alone).
 
 ## Carried over to later milestones
 - **M3 (runtime integration):** set `rb3ds_main_stack_size` (fork `3ds/ruby/shim/include/rb3ds.h`) to the
