@@ -105,13 +105,19 @@ begin
   sp.call(GREEN, 4, 0).tone = Tone.new(-100, 0, 0, 255)            # gray + negative tone: (50, 150, 150)
   inv = sp.call(RED, 0, 1)                                         # invert (mkxp-z): (0, 255, 255)
   inv.invert = true
-  vp = Viewport.new(130, 130, 100, 100)                            # viewport tone: (0, 0, 255)
+  tc = sp.call(Color.new(51, 51, 51), 1, 1)                        # tone + color, GLSL clamps once:
+  tc.tone = Tone.new(-255, -255, -255)                             # mix(0.2 - 1, 1, 0.5) -> 26
+  tc.color = Color.new(255, 255, 255, 128)
+  it = sp.call(RED, 2, 1)                                          # invert after tone: (0, 155, 255)
+  it.tone = Tone.new(0, 100, 0)
+  it.invert = true
+  vp = Viewport.new(130, 250, 100, 100)                            # viewport tone: (0, 0, 255)
   vp.tone = Tone.new(-255, -255, 0)
   vs = Sprite.new(vp); vs.bitmap = solid.call(WHITE); objs << vs << vp
-  vg = Viewport.new(250, 130, 100, 100)                            # viewport gray: 150
+  vg = Viewport.new(250, 250, 100, 100)                            # viewport gray: 150
   vg.tone = Tone.new(0, 0, 0, 255)
   vgs = Sprite.new(vg); vgs.bitmap = solid.call(GREEN); objs << vgs << vg
-  pv = Viewport.new(370, 130, 100, 100)                            # plane tone: (255, 0, 255)
+  pv = Viewport.new(370, 250, 100, 100)                            # plane tone: (255, 0, 255)
   pl = Plane.new(pv); pl.bitmap = solid.call(BLUE); pl.tone = Tone.new(255, 0, 0); objs << pl << pv
   Graphics.update
   fx = Graphics.snap_to_bitmap
@@ -123,9 +129,11 @@ begin
              "#{at.call(420, 30).inspect} #{at.call(420, 100).inspect}")
   check.call('sprite_gray_tone', near.call(at.call(540, 60), [50, 150, 150]), at.call(540, 60).inspect)
   check.call('sprite_invert', near.call(at.call(60, 180), [0, 255, 255]), at.call(60, 180).inspect)
-  check.call('viewport_tone', near.call(at.call(180, 180), [0, 0, 255]), at.call(180, 180).inspect)
-  check.call('viewport_gray', near.call(at.call(300, 180), [150, 150, 150]), at.call(300, 180).inspect)
-  check.call('plane_tone', near.call(at.call(420, 180), [255, 0, 255]), at.call(420, 180).inspect)
+  check.call('sprite_tone_color', near.call(at.call(180, 180), [26, 26, 26]), at.call(180, 180).inspect)
+  check.call('sprite_invert_tone', near.call(at.call(300, 180), [0, 155, 255]), at.call(300, 180).inspect)
+  check.call('viewport_tone', near.call(at.call(180, 300), [0, 0, 255]), at.call(180, 300).inspect)
+  check.call('viewport_gray', near.call(at.call(300, 300), [150, 150, 150]), at.call(300, 300).inspect)
+  check.call('plane_tone', near.call(at.call(420, 300), [255, 0, 255]), at.call(420, 300).inspect)
   fx.dispose
   objs.each(&:dispose)
 

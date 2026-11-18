@@ -213,16 +213,17 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
     disposed bitmaps is 4 MB on the 3DS.
   - **`Bitmap#blt`:** exact for transparent and opaque destination pixels on the TEV with the
     destination copy on unit 1 (combiner buffer: a stage's output reaches the buffer input two
-    stages later).
-- **Renderer stage B (fork branch `feat/3ds-gl-effects`):** one TEV effect chain for sprites,
-  planes, tilemap layers and gray (luma via per-channel multiply-add); sprite bush as a CPU
+    stages later; stage 0 reads the buffer as 0, the initial buffer color only from stage 1).
+- **Renderer stage B (fork https://github.com/michvllni/mkxp-z-3ds/pull/6):** one TEV effect chain for sprites,
+  planes, tilemap layers and gray (luma via per-channel multiply-add; color/flash mixed before
+  the tone, scaled by what the mixes leave, so the per-stage clamps give GLSL's result); sprite bush as a CPU
   geometry split; viewport and screen effects; `Graphics.transition` plain and with a
   transition image (texture units 1-3 → PICA 0-2, third texture coordinate).
 - **Upstream mkxp-z assumes Hires factors >= 1.** Found with factor 0.5, fixed with 3DS hooks:
   scissor cache (`GLProperty::set` skips unchanged boxes that apply() scales), screen scene
   geometry used for both buffer pixels and game coordinates (culled everything beyond 320×240),
-  shader blits projected with the Hires matrix, the gray shader's quad, `snap_to_bitmap` without
-  bitmap twins. Plane's tiled path (no `npot_repeat`) ignored the viewport position. Upstream
+  shader blits projected with the Hires matrix, the gray shader's quad, the transition quad and
+  `resize_screen`'s scissor box in buffer pixels, `snap_to_bitmap` without bitmap twins. Plane's tiled path (no `npot_repeat`) ignored the viewport position. Upstream
   reports are on hold (Carried over: backlog).
 - **Large textures:** mkxp-z keeps bitmaps above `GL_MAX_TEXTURE_SIZE` as CPU "mega surfaces"; only
   its tileset atlas needs more than 1024 px (tilesets above about 1300 px at 1024). Per PLAN §3.2
