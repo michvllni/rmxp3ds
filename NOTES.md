@@ -193,6 +193,8 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
     - The CPU cannot access VRAM on the console (permission fault; citro3d `texture.c`: "CPU
       can't write to VRAM"), but Azahar allows it: copies to and from VRAM go through GX
       (`C3D_SyncTextureCopy`), never `memcpy`.
+    - Azahar does not fault on reads near address 0 either: null-pointer bugs in citro3d calls
+      (e.g. `C3D_TexBind(1, NULL)`) only show on the console.
     - Texture memory starts with the top row (t = 1).
     - `C3D_SetViewport` resets the scissor.
     - `DVLB_ParseFile` needs 4-byte-aligned data.
@@ -305,6 +307,17 @@ Console numbers only, with date, commits of both repos and settings.
 - **Cause:** the CPU cannot write VRAM on the console; Azahar allows it, so the emulator checks
   could not catch it. Fixed in mkxp-z-3ds `9c9e785e` (GX texture copies, render targets move
   back to linear memory before CPU access). Attempt 2 follows with the fixed kit.
+
+### 2026-11-18 · Hardware run 3, attempt 2 · New 3DS · M3 checks (`tools/hw3`)
+- **Commits:** rmxp3ds `5cc7d8f`, mkxp-z-3ds `9c9e785e`; kit defaults.
+- **Result:** crash before any result file, again while a Window was drawn. Luma3DS dump: data
+  abort, DFSR 0x5 (translation fault, read), FAR 0xc, PC in citro3d `C3D_TexBind` called from
+  gl3ds `emit` (binary identical to the kit, symbolized). The VRAM fix of attempt 1 got past
+  its crash site.
+- **Cause:** `C3D_TexBind(unit, NULL)` for units 1 and 2: citro3d 1.7.1 reads the texture's
+  type there (`texture.c` `C3D_TexBind` → `C3D_TexGetType`); NULL is only valid for unit 0.
+  Azahar reads 0 at address 0xc instead of faulting. Fixed in mkxp-z-3ds `5fa7b754` (a dummy
+  texture on unused units). Attempt 3 follows.
 
 ### 2026-11-18 · Hardware run 2 · New 3DS · M2 go/no-go benchmark
 - **Setup:**
