@@ -1,18 +1,46 @@
 #!/bin/sh
-# Run Azahar on a virtual X display (Xvfb) inside the dev container.
-#   azahar-headless build/xp3ds.3dsx
-# Display defaults to $AZAHAR_DISPLAY (:99). For parallel instances use different displays
-# and separate HOME dirs so configs/virtual SD cards don't collide, e.g.
-#   AZAHAR_DISPLAY=:100 HOME=/tmp/az1 azahar-headless game.3dsx
-# Screenshot of the running instance:
-#   DISPLAY=:99 import -window root shot.png
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# SYNOPSIS
+#   azahar-headless [azahar options] [file.3dsx|file.cia|...]
+#
+# DESCRIPTION
+#   Runs Azahar on a virtual X display (Xvfb), starting Xvfb if none is running on that display.
+#   Environment:
+#     AZAHAR_DISPLAY  X display to use (default :99)
+#     AZAHAR_HOME     extracted Azahar AppImage (default /opt/tools/azahar)
+#   For parallel instances use different displays and separate HOME dirs so configs and virtual
+#   SD cards (~/.local/share/azahar-emu/sdmc) don't collide.
+#   Screenshot of a running instance: DISPLAY=:99 import -window root shot.png
+#
+# OPTIONS
+#   -h, --help  show this help (Azahar's own help: azahar-headless -- --help)
+#   All other arguments are passed to Azahar unchanged.
+#
+# EXAMPLE
+#   AZAHAR_DISPLAY=:100 HOME=/tmp/az1 azahar-headless build/hello.3dsx
 set -eu
 
+usage() {
+  sed -n '3,/^set -eu/{/^set -eu/d;s/^# \{0,1\}//;p}' "$0"
+}
+
+case "${1:-}" in
+  -h|--help) usage; exit 0 ;;
+  --) shift ;;
+esac
+
 DISPLAY_NUM="${AZAHAR_DISPLAY:-:99}"
+AZAHAR_HOME="${AZAHAR_HOME:-/opt/tools/azahar}"
+
+if [ ! -x "$AZAHAR_HOME/AppRun" ]; then
+  echo "azahar-headless: $AZAHAR_HOME/AppRun not found (set AZAHAR_HOME)" >&2
+  exit 1
+fi
 
 if ! xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1; then
   Xvfb "$DISPLAY_NUM" -screen 0 1280x720x24 -nolisten tcp \
-    >"/tmp/xvfb-${DISPLAY_NUM#:}.log" 2>&1 &
+    >"${TMPDIR:-/tmp}/xvfb-${DISPLAY_NUM#:}.log" 2>&1 &
   i=0
   until xdpyinfo -display "$DISPLAY_NUM" >/dev/null 2>&1; do
     i=$((i + 1))
@@ -27,4 +55,4 @@ fi
 export DISPLAY="$DISPLAY_NUM"
 export QT_QPA_PLATFORM=xcb
 
-exec /opt/azahar/AppRun "$@"
+exec "$AZAHAR_HOME/AppRun" "$@"

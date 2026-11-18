@@ -1,0 +1,77 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Debian trixie packages for the dev container and the Coder workspace (tools/setup-workspace.sh).
+# One package per line; comments start with '#'.
+
+# Build basics, host Ruby build deps (ruby-build), CRuby cross build
+build-essential
+git
+curl
+ca-certificates
+unzip
+xz-utils
+pkg-config
+autoconf
+automake
+libtool
+bison
+libyaml-dev
+libssl-dev
+libreadline-dev
+zlib1g-dev
+libffi-dev
+libgdbm-dev
+cmake
+ninja-build
+meson
+python3
+gdb-multiarch
+# JSON (tools/setup-workspace.sh registry access, scripts)
+jq
+
+# Converter / asset tools
+ffmpeg
+imagemagick
+
+# Headless Azahar: virtual display + input/screenshot helpers
+xvfb
+xauth
+x11-utils
+xdotool
+
+# Libraries Azahar 2126.2 does not bundle (ldd of the extracted AppImage, see NOTES.md)
+libegl1
+libglx0
+libopengl0
+libx11-6
+libx11-xcb1
+libxcb1
+libxcb-dri3-0
+libice6
+libsm6
+libdrm2
+libwayland-client0
+libfontconfig1
+libfreetype6
+libharfbuzz0b
+libfribidi0
+libgmp10
+libcom-err2
+zlib1g
+libdbus-1-3
+# Qt xcb platform plugin
+libxkbcommon-x11-0
+libxcb-cursor0
+libxcb-icccm4
+libxcb-image0
+libxcb-keysyms1
+libxcb-randr0
+libxcb-render-util0
+libxcb-xinerama0
+libxcb-xkb1
+libxcb-shape0
+libxcb-xfixes0
+# Mesa: GPU drivers for /dev/dri, llvmpipe/lavapipe software rendering otherwise
+libgl1-mesa-dri
+libegl-mesa0
+libglx-mesa0
+mesa-vulkan-drivers
