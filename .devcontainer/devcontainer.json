@@ -1,0 +1,49 @@
+{
+  "name": "xp3ds",
+  "build": {
+    "dockerfile": "Dockerfile",
+    "args": { "RUBY_VERSION": "3.1.6" }
+  },
+
+  // Host networking so `3dslink -a <3ds-ip> build/xp3ds.3dsx` reaches the console (Linux hosts).
+  // On Docker Desktop (macOS/Windows), use 3dslink with an explicit IP; host mode may be limited.
+  // --device=/dev/dri: GPU acceleration for headless Azahar (Intel/AMD iGPU). Remove it on hosts
+  // without /dev/dri; Azahar then falls back to Mesa software rendering.
+  "runArgs": ["--network=host", "--device=/dev/dri"],
+
+  // Your own game folders (never committed). Create the folder on the host first.
+  "mounts": [
+    "source=${localEnv:HOME}/xp3ds-games,target=/workspaces/games,type=bind,consistency=cached"
+  ],
+
+  "containerEnv": {
+    "DEVKITPRO": "/opt/devkitpro",
+    "DEVKITARM": "/opt/devkitpro/devkitARM",
+    // Virtual display used by azahar-headless; screenshots: import -window root shot.png
+    "AZAHAR_DISPLAY": ":99"
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "llvm-vs-code-extensions.vscode-clangd",
+        "Shopify.ruby-lsp",
+        "tamasfe.even-better-toml"
+      ],
+      "settings": {
+        "C_Cpp.default.compilerPath": "/opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc",
+        "C_Cpp.default.includePath": [
+          "${workspaceFolder}/**",
+          "/opt/devkitpro/libctru/include",
+          "/opt/devkitpro/portlibs/3ds/include"
+        ],
+        "C_Cpp.default.defines": ["__3DS__", "ARM11"]
+      }
+    }
+  },
+
+  // Seeds Azahar's settings (New 3DS model, CPU clock, renderer, audio off) from the repo, if present.
+  "postCreateCommand": "arm-none-eabi-gcc --version | head -n1 && ruby -v && if [ -f .devcontainer/azahar/qt-config.ini ]; then mkdir -p ~/.config/azahar-emu && cp .devcontainer/azahar/qt-config.ini ~/.config/azahar-emu/; fi"
+}
