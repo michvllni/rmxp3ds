@@ -4,6 +4,7 @@
 # SYNOPSIS
 #   tests/smoke/azahar-smoke.sh --3dsx FILE --result PATH --expect REGEX
 #                               [--timeout SEC] [--screenshot PNG] [--display :N] [--keep-home]
+#                               [--sd-file SRC=DEST]...
 #
 # DESCRIPTION
 #   Runs a self-reporting .3dsx in headless Azahar (azahar-headless) and checks its result file.
@@ -26,6 +27,8 @@
 #   --display :N       X display (default: the first free one from :100; an existing X server on
 #                      the given display is reused and not stopped)
 #   --keep-home        keep the temporary HOME (Azahar logs, virtual SD) and print its path
+#   --sd-file SRC=DEST copy file SRC to DEST on the virtual SD card (DEST relative to its root,
+#                      e.g. rmxp3ds/test/bench.rb); repeatable
 #   -h, --help         show this help
 #
 # EXAMPLE
@@ -39,6 +42,7 @@ usage() {
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 FILE="" RESULT="" EXPECT="" TIMEOUT=120 SHOT="" KEEP=0
+SD_FILES=()
 DISPLAY_NUM=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -49,6 +53,11 @@ while [ $# -gt 0 ]; do
     --screenshot) SHOT="${2:?--screenshot needs a value}"; shift 2 ;;
     --display) DISPLAY_NUM="${2:?--display needs a value}"; shift 2 ;;
     --keep-home) KEEP=1; shift ;;
+    --sd-file)
+      case "${2:-}" in
+        ?*=?*) SD_FILES+=("$2"); shift 2 ;;
+        *) echo "azahar-smoke.sh: --sd-file needs SRC=DEST" >&2; exit 2 ;;
+      esac ;;
     -h|--help) usage; exit 0 ;;
     *) echo "azahar-smoke.sh: unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
@@ -78,16 +87,17 @@ claim_display() {
   exit 1
 }
 
-AZ_HOME="$(mktemp -d)"
-SDMC="$AZ_HOME/.local/share/azahar-emu/sdmc"
-mkdir -p "$SDMC/rmxp3ds/test"
-: >"$SDMC/rmxp3ds/test/autoexit"
-if [ -f "$REPO/.devcontainer/azahar/qt-config.ini" ]; then
-  mkdir -p "$AZ_HOME/.config/azahar-emu"
-  cp "$REPO/.devcontainer/azahar/qt-config.ini" "$AZ_HOME/.config/azahar-emu/"
-fi
+# Validate --sd-file before creating anything (an error exit leaves no temporary HOME behind).
+for spec in "${SD_FILES[@]}"; do
+  src="${spec%%=*}" dest="${spec#*=}"
+  case "/$dest/" in
+    //*|*/../*|*//|/./) echo "azahar-smoke.sh: --sd-file DEST must be a relative file path without '..': $dest" >&2; exit 2 ;;
+  esac
+  [ -f "$src" ] || { echo "azahar-smoke.sh: --sd-file source $src not found" >&2; exit 2; }
+done
 
 PGID=""
+AZ_HOME=""
 # shellcheck disable=SC2317 # invoked via trap
 # cleanup: stops the emulator's process group (Azahar, and Xvfb if it started it) and removes
 # the temporary HOME unless --keep-home.
@@ -99,10 +109,27 @@ cleanup() {
     # wait until the group is gone, so a next run can reuse the display
     for _ in $(seq 50); do pgrep -g "$PGID" >/dev/null || break; sleep 0.1; done
   fi
-  if [ "$KEEP" -eq 1 ]; then echo "azahar-smoke.sh: kept HOME $AZ_HOME"; else rm -rf "$AZ_HOME"; fi
+  if [ -n "$AZ_HOME" ]; then
+    if [ "$KEEP" -eq 1 ]; then echo "azahar-smoke.sh: kept HOME $AZ_HOME"; else rm -rf "$AZ_HOME"; fi
+  fi
   if [ -n "$CLAIM" ]; then rmdir "$CLAIM" 2>/dev/null || true; fi
 }
 trap cleanup EXIT
+
+AZ_HOME="$(mktemp -d)"
+SDMC="$AZ_HOME/.local/share/azahar-emu/sdmc"
+mkdir -p "$SDMC/rmxp3ds/test"
+: >"$SDMC/rmxp3ds/test/autoexit"
+for spec in "${SD_FILES[@]}"; do
+  src="${spec%%=*}" dest="${spec#*=}"
+  mkdir -p "$(dirname "$SDMC/$dest")"
+  cp "$src" "$SDMC/$dest"
+done
+if [ -f "$REPO/.devcontainer/azahar/qt-config.ini" ]; then
+  mkdir -p "$AZ_HOME/.config/azahar-emu"
+  cp "$REPO/.devcontainer/azahar/qt-config.ini" "$AZ_HOME/.config/azahar-emu/"
+fi
+
 [ -n "$DISPLAY_NUM" ] || claim_display
 
 # screenshot: saves the X display to --screenshot, if requested.

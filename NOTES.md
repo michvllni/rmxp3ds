@@ -4,6 +4,9 @@
 Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` from PLAN §10.
 
 ## Status
+- **2026-11-18:** M1 done: CRuby 3.1.3 cross-built in the fork (`runtime/3ds/ruby`, merged into
+  `dev` as `a807e577`, mkxp-z-3ds PR #1), `tools/bench` passes in Azahar and on the New 3DS
+  (hardware run 1, with M0's hello). `runtime/` points at `a807e577`.
 - **2026-11-18:** Bootstrap. Repo layout, submodule `runtime/` → mkxp-z-3ds `dev` @ `3c7c47c`.
   Environment decided (D10). M0 in progress.
 
@@ -94,5 +97,89 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   on the 3DS app core (no time slicing between equal priorities, unverified); app memory for .3dsx
   on New 3DS (unverified); encoding tables size; libctru 2.7.1 (2026-11-01) newer than pinned 2.7.0.
 
+## M1 findings (2026-11-18, emulator; fork `feat/3ds-ruby` @ 81cf0755)
+- **Build:** `runtime/3ds/ruby/build.sh` about 1 min (-j3, workspace), peak about 1.9 GiB.
+  `libruby-static.a` 5.3 MB, `bench.3dsx` 5.9 MB.
+- **Problems found and fixed** (fork patches/shim, details in `runtime/3ds/ruby/README.md`):
+  - GCC 16 defaults to C23 → `-std=gnu17`.
+  - `addr2line.c` needs dl → `rb_cv_binary_elf=no`.
+  - Missing POSIX symbols → shim.
+  - libctru `fcntl()` only handles sockets → `rb_bug` on the first File.open → close-on-exec macros
+    removed.
+  - `.S` files assembled without the arch flags (`ASFLAGS` only) → `ASFLAGS` with `-mfpu=vfp`.
+  - arm32 coroutine doesn't save d8–d15. Register-level test: fails without the patch, passes with it.
+  - Main-stack size unknown → no stack-overflow detection → derived from `__stacksize__`. Now
+    fires at about 951 KiB of 1 MiB.
+  - Transient heap 32 MB → 4 MB: malloc arena after the bench 37 MB → 8.3 MB.
+  - `File.expand_path('sdmc:/x')` was relative → `file.c` patch.
+- **Works (Azahar):** VM init 0.8 s; scripts from `sdmc:/` and `romfs:/`; Marshal of the
+  synthetic map (75 KB, digest verified); Zlib; Fiber; `Enumerator#next`; Shift_JIS; `sleep`;
+  `Time`; `Dir.glob`; `Random`.
+- **Threads (fixed):** four causes were stacked on top of each other:
+  1. Ruby raised NotImplementedError in every new native thread (no `STACKADDR_AVAILABLE`).
+  2. Thread stacks were 32 KiB (newlib has no `PTHREAD_STACK_MIN`).
+  3. libctru creates pthreads at priority 0x3F (libctru 2.7.0 `source/system/syscalls.c:194-209`),
+     and the 3DS never runs lower priorities while a higher one is runnable.
+  4. newlib's `sched_yield` is an ENOSYS stub.
+
+  Native `pthread_cond_timedwait` with `CLOCK_MONOTONIC` works. Now `Thread#value`,
+  `Thread.pass`, Queue and ConditionVariable work; there is no preemption (timer pipe).
+- **Thread memory leak (fixed):** libsysbase ignores `PTHREAD_CREATE_DETACHED`, so every finished
+  thread kept its ~1 MiB stack. Measured with 30 threads: +30 MB, after the fix +23 KB. The shim
+  now detaches threads in libctru; the bench check `thread_memory` guards it.
+- **Fiber pool:** starts with 2 stacks (Ruby needs at least 2: `fiber_pool_allocate_memory` only
+  allocates while count > 1; 1 hung `ruby_init`).
+- **`File.dirname` of device paths** was missing the device ("/a"); fixed, bench check `device_paths`.
+- **Open:**
+  - Deep C recursion (nested `inspect` ~2000 levels) crashes instead of raising.
+  - The initial cwd in Azahar is `/` (hbmenu on hardware: unverified).
+- **Emulator timings are not performance numbers.** For the record (Azahar 2126.2, 100 % clock,
+  JIT): while_loop_1M 670 ms, method_call_300k 1028 ms, object_alloc_200k 1637 ms,
+  marshal_load_fixture 90 ms.
+
+## Carried over to later milestones
+- **M3 (runtime integration):** set `rb3ds_main_stack_size` (fork `3ds/ruby/shim/include/rb3ds.h`) to the
+  rgss thread's stack size before `RUBY_INIT_STACK` (mkxp-z `binding/binding-mri.cpp:1194`), and create
+  that thread with a large stack (SDL2 n3ds default: 80 KiB).
+- **Later:** Ruby thread preemption (timer without pipes); guard page + exception handler for deep C
+  recursion.
+
 ## Measurements
-_None yet. Console numbers only, with date, commits of both repos and settings._
+Console numbers only, with date, commits of both repos and settings.
+
+### 2026-11-18 · Hardware run 1 · New 3DS
+- **Setup:**
+  - Kit v2: rmxp3ds `62707b9` (branch `feat/m1-ruby-bench`), mkxp-z-3ds `88d0581d` (branch
+    `feat/3ds-ruby`), devkitARM r68, libctru 2.7.0.
+  - Started from the Homebrew Launcher (no 3dslink), `osSetSpeedupEnable(true)`, 1 MiB main stack.
+  - Results from `sdmc:/rmxp3ds/test/`.
+- **hello (M0):** `RMXP3DS_TEST hello PASS frames=60 new3ds=1`. M0's console criterion is met:
+  the binary runs on the console. Deployment via 3dslink is not exercised yet.
+- **rubybench (M1):** PASS. All checks pass on hardware: native pthread, stack limit (~951 KiB of
+  1024), Fiber VFP, threads, Queue, ConditionVariable, Zlib, Marshal fixture + round trip, encodings.
+  - VM init 284 ms; whole run 6.5 s.
+  - heap 88.5 MB, malloc arena 8.3 MB (7.3 MB in use).
+  - GC: 107 runs, 34 heap pages.
+  - Timer pipe warning as expected.
+
+| Benchmark | New 3DS | Azahar 2126.2 | Host Ruby 3.1.3 x86 (EPYC 9V74, median of 3) | 3DS / host |
+|---|---|---|---|---|
+| marshal_load_fixture (75 KB map) | 62 ms | 90 ms | 1.7 ms | ~37× |
+| while_loop_1M | 301 ms | 670 ms | 12.8 ms | ~24× |
+| method_call_300k | 530 ms | 1028 ms | 10.5 ms | ~50× |
+| block_yield_300k | 660 ms | 1099 ms | 9.3 ms | ~71× |
+| ivar_attr_200k | 372 ms | 632 ms | 10.0 ms | ~37× |
+| array_push_each_200k | 700 ms | 1177 ms | 13.6 ms | ~52× |
+| hash_set_get_100k | 442 ms | 637 ms | 14.5 ms | ~30× |
+| string_build_50k | 373 ms | 538 ms | 8.4 ms | ~44× |
+| object_alloc_200k | 1107 ms | 1637 ms | 32.7 ms | ~34× |
+| table_rw_40x30x3_x10 | 304 ms | 491 ms | 9.2 ms | ~33× |
+| marshal_load_fixture_x10 | 633 ms | 994 ms | 15.8 ms | ~40× |
+
+- **Reading:**
+  - CRuby on the New 3DS is roughly 25–70× slower than a current desktop core (median ~37×).
+  - Azahar at 100 % clock is 1.4–2.2× *slower* than the console, the opposite of PLAN §6.1's
+    assumption. CPU clock calibration therefore goes up, not down. Recheck with GPU
+    acceleration; this workspace uses llvmpipe.
+  - Marshal load of a 75 KB map takes 62 ms, so loading a map is acceptable.
+  - Per-frame Ruby cost is the open question for M2.

@@ -48,12 +48,17 @@ docs/            PLAN.md, DECISIONS.md
 | Workspace toolchain | `tools/setup-workspace.sh && . ~/volume/.toolchain/env.sh` |
 | Build hello-world | `cmake -S tools/hello -B build/hello -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake" && cmake --build build/hello` |
 | Emulator smoke test | `tests/smoke/azahar-smoke.sh --3dsx build/hello/hello.3dsx --result rmxp3ds/test/hello.txt --expect '^RMXP3DS_TEST hello PASS' --screenshot build/hello-smoke.png` |
+| CRuby for 3DS (fork) | `runtime/3ds/ruby/build.sh --jobs "$MEMGUARD_CPUS"` (via `memguard --`) → `runtime/build-3ds/ruby/` |
+| Ruby test/bench app | `cmake -S tools/bench -B build/bench -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake" && cmake --build build/bench` |
+| Ruby test in Azahar | `tests/smoke/azahar-smoke.sh --3dsx build/bench/bench.3dsx --result rmxp3ds/test/rubybench.txt --expect '^RMXP3DS_TEST rubybench PASS' --timeout 600` (add `--sd-file SRC=rmxp3ds/test/NAME` to run scripts/fixtures from SD) |
+| Synthetic map fixture | `ruby tests/fixtures/make-rxdata.rb --out FILE` |
 | Lint scripts | `git ls-files '*.sh' \| xargs shellcheck` |
 | Headless emulator | `azahar-headless <file.3dsx>`; screenshots via mcp-azahar |
 | Console | `3dslink -a <3ds-ip> <file.3dsx>`; test output (stderr): `3dslink -s` |
 
 CI (`.github/workflows/ci.yml`): shellcheck; dev container image build, hello-world build and
-Azahar smoke test inside the image (screenshot uploaded as artifact `hello-smoke`). Fill in this table as milestones add targets.
+Azahar smoke test, CRuby 3DS build, Ruby test/bench in Azahar with scripts from SD, all inside
+the image (`.3dsx` and screenshots uploaded as artifact `smoke-tests`). Fill in this table as milestones add targets.
 
 ## Conventions
 - Conventional Commits; one reviewable topic per PR; docs (README, AGENTS, NOTES, docs/*) updated in
@@ -86,6 +91,13 @@ stderr (redirected to the PC; stdout stays on the screen console). If
 `tests/smoke/azahar-smoke.sh` drives this in headless Azahar (fresh HOME, virtual SD and free X
 display per run).
 
+## Debugging on 3DS/Azahar
+`tools/bench` appends progress markers to `sdmc:/rmxp3ds/test/rubybench-stage.txt` and, without
+3dslink, redirects stderr (Ruby `[BUG]` reports, warnings) to `rubybench-stderr.txt`; run the
+smoke script with `--keep-home` and read them from the kept virtual SD. Ruby scripts placed on
+SD (`--sd-file`) override the romfs copies without rebuilding. If `sdmc:/rmxp3ds/test/main.rb` exists, `bench.3dsx` runs only
+that script (after its native checks): the entry point for other Ruby test programs.
+
 ## Pitfalls
 - Azahar stays open after a homebrew app exits and aborts on SIGTERM: judge runs by the result
   file, never by the emulator's exit status. Don't `pkill -f azahar` from a shell whose command
@@ -93,5 +105,8 @@ display per run).
 - A corrupt `.3dsx` can make Azahar allocate GiBs until the timeout: run it under `memguard` in the
   workspace.
 - Files extracted from an AppImage keep mode 0700; `install-tools.sh` opens them for other users.
+- CRuby on 3DS: Ruby `Thread`s work but are not preempted (no timer pipe: a busy thread runs
+  until it blocks or passes); deep C recursion can overflow the stack without SystemStackError;
+  GCC turns tail recursion into loops at -O2 (stack probes need a non-tail call). See `runtime/3ds/ruby/README.md`.
 - `runtime/` uses an HTTPS URL; a local `url.git@github.com:.insteadOf` rewrite is fine.
 - `/opt` in the Coder workspace is not persistent; only `/home/vscode/volume` is.
