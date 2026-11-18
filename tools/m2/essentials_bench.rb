@@ -34,6 +34,7 @@ $DEBUG = true
 Input.held = [Input::CTRL]
 Input.script = ->(f) { [2, 6, 8, 4][(f / 16) % 4] }
 frames = (ENV['OVERWORLD_FRAMES'] || 600).to_i
+raise 'OVERWORLD_FRAMES must be at least 1' if frames < 1
 maps = (ENV['MAPS'] || '41,31').split(',').map(&:to_i)
 
 logic = lambda do

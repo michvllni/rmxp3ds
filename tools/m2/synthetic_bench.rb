@@ -2,8 +2,10 @@
 # Benchmark/test for the synthetic game (tools/m2/synthetic, CI): runs FRAMES frames of
 # SynthMap#update with the headless clock and checks the result. Raises on failure, so the
 # 3DS test app reports FAIL. Evaluated by load_game.rb after the game's scripts.
-# ENV: FRAMES (default 600), EXPECT_DIGEST (if set: the digest must match, e.g. the host's).
+# ENV: FRAMES (default 600), EXPECT_DIGEST (if set: the digest must match, e.g. the host's),
+# REQUIRE_DIGEST=1 (EXPECT_DIGEST must be set: a cross-platform check cannot pass vacuously).
 frames = (ENV['FRAMES'] || 600).to_i
+raise 'FRAMES must be at least 1' if frames < 1
 clock = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
 
 state = 12_345
@@ -28,6 +30,7 @@ raise 'event left the map' unless map.events.all? { |e| e.x.between?(0, map.widt
 
 digest = map.digest
 expect = ENV['EXPECT_DIGEST'].to_s
+raise 'REQUIRE_DIGEST=1 but EXPECT_DIGEST is not set' if expect.empty? && ENV['REQUIRE_DIGEST'] == '1'
 raise "digest #{digest} != expected #{expect}" if !expect.empty? && digest != expect.to_i
 
 t = times.sort

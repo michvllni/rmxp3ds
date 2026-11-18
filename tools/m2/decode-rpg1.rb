@@ -21,11 +21,18 @@ require 'fileutils'
 
 root = File.expand_path('../..', __dir__)
 opts = { out: File.join(root, 'build/m2/rpg1.rb') }
-OptionParser.new do |o|
+parser = OptionParser.new do |o|
   o.banner = File.read(__FILE__)[/^# SYNOPSIS.*?^# EXAMPLE\n#[^\n]*\n/m].gsub(/^# ?/, '')
   o.on('--out FILE') { |v| opts[:out] = v }
   o.on('-h', '--help') { puts o.banner; exit }
-end.parse!
+end
+begin
+  parser.parse!
+rescue OptionParser::ParseError => e
+  warn e.message
+  warn parser.banner
+  exit 2
+end
 
 src = File.read(File.join(root, 'runtime/binding/module_rpg1.rb.xxd'))
 len = src[/module_rpg1_len\s*=\s*(\d+)/, 1] or abort 'decode-rpg1.rb: module_rpg1_len not found'

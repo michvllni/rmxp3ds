@@ -21,8 +21,11 @@
 # OPTIONS
 #   --game DIR        game directory containing Data/Scripts.rxdata
 #   --bench NAME      benchmark in tools/m2: essentials (default) or synthetic
-#   --env KEY=VALUE   setting for the benchmark (repeatable), e.g. BATTLES=2, MAPS=, FRAMES=300,
-#                     EXPECT_DIGEST=N (synthetic)
+#   --env KEY=VALUE   setting for the benchmark (repeatable); host mode ignores these keys from
+#                     the calling environment, like the 3DS does.
+#                     essentials: OVERWORLD_FRAMES=N, MAPS=41,31 (empty: no maps), BATTLES=N
+#                     synthetic:  FRAMES=N, EXPECT_DIGEST=N, REQUIRE_DIGEST=1
+#                     both:       SIM_FPS=N (game clock, default 30)
 #   --3dsx FILE       test app (default: build/bench/bench.3dsx)
 #   --timeout SEC     Azahar timeout (default: 900)
 #   --keep-home       keep Azahar's temporary HOME (virtual SD with stderr and stage files)
@@ -92,7 +95,8 @@ write_env() {
 
 case "$MODE" in
   host)
-    (for kv in "${ENVS[@]}"; do export "${kv?}"; done
+    (unset OVERWORLD_FRAMES MAPS BATTLES FRAMES EXPECT_DIGEST REQUIRE_DIGEST SIM_FPS
+     for kv in "${ENVS[@]}"; do export "${kv?}"; done
      ruby "$HERE/load_game.rb" "$GAME" "$WORK/rpg1.rb" "$HERE/$BENCH_RB")
     ;;
   azahar)

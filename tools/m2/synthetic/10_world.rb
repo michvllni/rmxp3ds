@@ -2,7 +2,8 @@
 # Synthetic game, section "World" (packed into Scripts.rxdata by tests/fixtures/make-game.rb).
 # Not an RPG Maker game: just enough game-like Ruby to test the M2 pipeline without game content
 # (scripts loaded from Scripts.rxdata, map data via load_data, a frame loop with a game clock).
-# Integer-only and driven by its own LCG, so every platform computes the same digest.
+# Integer-only (waits count frames, not float seconds) and driven by its own LCG, so every
+# platform computes the same digest.
 
 class SynthEvent
   attr_reader :id, :x, :y, :steps
@@ -13,15 +14,15 @@ class SynthEvent
     @y = y
     @commands = commands
     @steps = 0
-    @wait_until = 0.0
+    @wait_until = 0
   end
 
   DIRS = [[0, 1], [-1, 0], [1, 0], [0, -1]].freeze
 
-  # One frame: moves one tile in a pseudo-random direction when passable; after a move, waits a
-  # little game time (System.uptime, like time-based game logic).
+  # One frame: moves one tile in a pseudo-random direction when passable; after a move, waits
+  # 0-4 frames.
   def update(map, rnd)
-    return if System.uptime < @wait_until
+    return if Graphics.frame_count < @wait_until
 
     dx, dy = DIRS[rnd.call % 4]
     nx = @x + dx
@@ -31,7 +32,7 @@ class SynthEvent
     @x = nx
     @y = ny
     @steps += 1
-    @wait_until = System.uptime + (@commands % 5) / 30.0
+    @wait_until = Graphics.frame_count + @commands % 5
   end
 end
 

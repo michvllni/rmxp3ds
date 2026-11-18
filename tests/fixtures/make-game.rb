@@ -24,12 +24,19 @@ require 'fileutils'
 require_relative '../../tools/bench/romfs/rgss_stubs'
 
 opts = { out: File.expand_path('out/synthetic-game', __dir__), events: 60 }
-OptionParser.new do |o|
+parser = OptionParser.new do |o|
   o.banner = File.read(__FILE__)[/^# SYNOPSIS.*?^# EXAMPLE\n#[^\n]*\n/m].gsub(/^# ?/, '')
   o.on('--out DIR') { |v| opts[:out] = v }
   o.on('--events N', Integer) { |v| opts[:events] = v }
   o.on('-h', '--help') { puts o.banner; exit }
-end.parse!
+end
+begin
+  parser.parse!
+rescue OptionParser::ParseError => e
+  warn e.message
+  warn parser.banner
+  exit 2
+end
 
 data = File.join(opts[:out], 'Data')
 FileUtils.mkdir_p(data)

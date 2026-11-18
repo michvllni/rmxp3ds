@@ -169,14 +169,14 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 
 | Phase | Host x86 Ruby 3.1.3 | Azahar | Azahar / host |
 |---|---|---|---|
-| load 402 script sections | 0.33 s | 11.2 s | 34× |
+| load 402 script sections (401 evaluated, "Main" skipped) | 0.33 s | 11.2 s | 34× |
 | new game (data loading) | 0.12 s | 11.3 s | ~95× |
 | A Route 5 logic | 0.14 ms/frame | 6.8 ms (p95 8.8) | 49× |
 | B Route 5 + Ruby spritesets | 0.72 ms/frame | 32.8 ms (p95 36.3) | 46× |
 | A Route 3 logic | 0.07 ms/frame | 3.1 ms (p95 4.1) | 44× |
 | B Route 3 + Ruby spritesets | 0.66 ms/frame | 28.4 ms (p95 31.9) | 43× |
-| C battle | 3.6 ms/turn | 120 ms/turn | 34× |
-| C damage calc | 0.11 ms | 3.6 ms | 34× |
+| C battle | 3.6 ms/turn | 120 ms/turn | 33× |
+| C damage calc | 0.11 ms | 3.6 ms | 33× |
 
   Memory in Azahar: 38.7 MB malloc in use after everything (8.3 MB for M1's bench alone).
 
