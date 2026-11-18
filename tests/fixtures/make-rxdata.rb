@@ -22,10 +22,11 @@
 # EXAMPLE
 #   ruby tests/fixtures/make-rxdata.rb --out /tmp/Map001.rxdata --events 100
 require 'optparse'
+require 'fileutils'
 require_relative '../../tools/bench/romfs/rgss_stubs'
 
 opts = { out: File.expand_path('out/Map001.rxdata', __dir__), events: 60, width: 40, height: 30, seed: 1 }
-OptionParser.new do |o|
+parser = OptionParser.new do |o|
   o.banner = File.read(__FILE__)[/^# SYNOPSIS.*?^# EXAMPLE\n#[^\n]*\n/m].gsub(/^# ?/, '')
   o.on('--out FILE') { |v| opts[:out] = v }
   o.on('--events N', Integer) { |v| opts[:events] = v }
@@ -33,11 +34,18 @@ OptionParser.new do |o|
   o.on('--height H', Integer) { |v| opts[:height] = v }
   o.on('--seed S', Integer) { |v| opts[:seed] = v }
   o.on('-h', '--help') { puts o.banner; exit }
-end.parse!
+end
+begin
+  parser.parse!
+rescue OptionParser::ParseError => e
+  warn e.message
+  warn parser.banner
+  exit 2
+end
 
 map = RGSSStubs.synthetic_map(opts[:width], opts[:height], opts[:events], opts[:seed])
 data = Marshal.dump(map)
-Dir.mkdir(File.dirname(opts[:out])) unless Dir.exist?(File.dirname(opts[:out]))
+FileUtils.mkdir_p(File.dirname(opts[:out]))
 File.binwrite(opts[:out], data)
 puts "#{opts[:out]}: #{data.bytesize} bytes, #{opts[:events]} events, " \
      "#{opts[:width]}x#{opts[:height]}, digest #{RGSSStubs.digest(map)}"

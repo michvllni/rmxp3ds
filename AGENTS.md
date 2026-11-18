@@ -105,7 +105,7 @@ that script (after its native checks): the entry point for other Ruby test progr
 - A corrupt `.3dsx` can make Azahar allocate GiBs until the timeout: run it under `memguard` in the
   workspace.
 - Files extracted from an AppImage keep mode 0700; `install-tools.sh` opens them for other users.
-- CRuby on 3DS: Ruby `Thread`s hang (no timer pipe yet); deep C recursion can overflow the stack
+- CRuby on 3DS: Ruby `Thread`s work but are not preempted (no timer pipe: a busy thread runs until it blocks or passes); deep C recursion can overflow the stack
   without SystemStackError; GCC turns tail recursion into loops at -O2 (stack probes need a
   non-tail call). See `runtime/3ds/ruby/README.md`.
 - `runtime/` uses an HTTPS URL; a local `url.git@github.com:.insteadOf` rewrite is fine.

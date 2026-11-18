@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # M1 Ruby test and micro-benchmark for the 3DS (run by tools/bench, see main.c).
 # Correctness checks raise on failure; the value of the last expression is the result text.
-# Runs unchanged on a desktop Ruby for comparison:
-#   ruby -r ./tools/bench/romfs/rgss_stubs tools/bench/romfs/bench.rb
+# Runs unchanged on a desktop Ruby for comparison (fixture from tests/fixtures/make-rxdata.rb):
+#   ruby tests/fixtures/make-rxdata.rb
+#   ruby -r ./tools/bench/romfs/rgss_stubs -e 'puts eval(File.read(ARGV[0]))' tools/bench/romfs/bench.rb
 
 lines = []
 clock = -> { Process.clock_gettime(Process::CLOCK_MONOTONIC) }
@@ -63,7 +64,8 @@ blob = 'RMXP3DS' * 2000
 check.call('zlib', Zlib::Inflate.inflate(Zlib::Deflate.deflate(blob)) == blob)
 
 expected = RGSSStubs.digest(RGSSStubs.synthetic_map(40, 30, 60, 1))
-fixture = ['sdmc:/rmxp3ds/test/Map001.rxdata', 'romfs:/Map001.rxdata'].find { |f| File.exist?(f) }
+fixture = ['sdmc:/rmxp3ds/test/Map001.rxdata', 'romfs:/Map001.rxdata', 'tests/fixtures/out/Map001.rxdata']
+          .find { |f| File.exist?(f) }
 raise 'fixture Map001.rxdata not found' unless fixture
 data = File.binread(fixture)
 map = bench.call('marshal_load_fixture') { Marshal.load(data) }

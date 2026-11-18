@@ -3,9 +3,9 @@
 Runtime and converter to play RPG Maker XP games (primarily Pokémon Essentials fan games) on the
 New Nintendo 3DS, with optional per-layer stereoscopic 3D.
 
-**Status:** early development. M0 (toolchain, CI) done in the emulator; M1 (CRuby 3.1.3 on the
-3DS) runs in the emulator: scripts from SD, Marshal load of RMXP data, micro-benchmarks. Console
-measurements pending. Nothing playable yet. See
+**Status:** early development. M0 (toolchain, CI) and M1 (CRuby 3.1.3 on the 3DS: scripts from
+SD, Marshal load of RMXP data, threads, micro-benchmarks) run in the emulator and on the New 3DS.
+Nothing playable yet. See
 [NOTES.md](NOTES.md) for the current state and [docs/PLAN.md](docs/PLAN.md) for the roadmap.
 
 ## Repositories

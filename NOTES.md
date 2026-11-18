@@ -4,9 +4,8 @@
 Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` from PLAN §10.
 
 ## Status
-- **2026-11-18:** M1 in progress: CRuby 3.1.3 cross-built in the fork (`runtime/3ds/ruby`,
-  branch `feat/3ds-ruby`), `tools/bench` passes in Azahar. Console run pending (M0 hello + M1
-  bench together).
+- **2026-11-18:** M1 done: CRuby 3.1.3 cross-built in the fork (`runtime/3ds/ruby`), `tools/bench`
+  passes in Azahar and on the New 3DS (hardware run 1, with M0's hello).
 - **2026-11-18:** Bootstrap. Repo layout, submodule `runtime/` → mkxp-z-3ds `dev` @ `3c7c47c`.
   Environment decided (D10). M0 in progress.
 

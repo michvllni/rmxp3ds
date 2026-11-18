@@ -3,7 +3,7 @@
 # Build: runtime/3ds/ruby/build.sh first, then
 #   cmake -S tools/bench -B build/bench -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake"
 #   cmake --build build/bench
-cmake_minimum_required(VERSION 3.13)
+cmake_minimum_required(VERSION 3.18) # find_program(... REQUIRED)
 project(rmxp3ds_bench C)
 
 set(RUBY3DS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../../runtime/build-3ds/ruby"

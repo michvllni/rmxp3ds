@@ -66,6 +66,18 @@ static int write_test_file(const char *name, const char *text) {
 	return (fclose(f) == 0 && ok) ? 0 : -1;
 }
 
+// Writes head followed by len bytes of data (may contain NUL bytes) to TEST_DIR/name.
+static int write_test_file_n(const char *name, const char *head, const char *data, size_t len) {
+	char path[96];
+	mkdir("sdmc:/rmxp3ds", 0777);
+	mkdir(TEST_DIR, 0777);
+	snprintf(path, sizeof path, "%s/%s", TEST_DIR, name);
+	FILE *f = fopen(path, "w");
+	if (f == NULL) return -1;
+	int ok = fputs(head, f) >= 0 && fwrite(data, 1, len, f) == len;
+	return (fclose(f) == 0 && ok) ? 0 : -1;
+}
+
 // Returns the script path for name: TEST_DIR/name if it exists, else romfs:/name.
 static const char *script_path(const char *name, char *buf, size_t size) {
 	snprintf(buf, size, "%s/%s", TEST_DIR, name);
@@ -134,6 +146,7 @@ static const char *check_native_pthread(char *buf, size_t size) {
 	pthread_condattr_init(&ca);
 	int setclock = pthread_condattr_setclock(&ca, CLOCK_MONOTONIC);
 	pthread_cond_init(&pt_cond, &ca);
+	pthread_condattr_destroy(&ca);
 	pthread_t t;
 	int rc = pthread_create(&t, NULL, pt_body, NULL);
 	if (rc != 0) {
@@ -155,14 +168,20 @@ static const char *check_native_pthread(char *buf, size_t size) {
 	return buf;
 }
 
-// Recurses with ~1 KiB frames until ruby_stack_check() reports an imminent overflow; returns
-// the depth (~KiB of stack below this point) or limit if it never fires. Checks that CRuby knows
-// the main stack size (runtime/3ds/ruby/patches/0001); without it the limit is never reached.
-static int __attribute__((noinline)) stack_probe(int depth, int limit) {
+// Recurses with ~1 KiB frames until ruby_stack_check() reports an imminent overflow (sets
+// *fired) or hard_limit bytes below top are used; returns the bytes used below top. Checks that
+// CRuby knows the main stack size (runtime/3ds/ruby/patches/0001): without it the check fires
+// never (or at once, with a wrong stack start).
+static size_t __attribute__((noinline)) stack_probe(const char *top, size_t hard_limit, int *fired) {
 	volatile char frame[1000];
-	frame[0] = (char)depth;
-	if (depth >= limit || ruby_stack_check()) return depth + frame[0] - (char)depth;
-	int r = stack_probe(depth + 1, limit); // not a tail call: GCC would turn it into a loop
+	size_t used = (size_t)(top - (const char *)frame);
+	frame[0] = 1;
+	if (ruby_stack_check()) {
+		*fired = 1;
+		return used + (size_t)frame[0] - 1;
+	}
+	if (used >= hard_limit) return used;
+	size_t r = stack_probe(top, hard_limit, fired); // not a tail call: GCC would turn it into a loop
 	frame[1] = (char)r;
 	return r;
 }
@@ -263,8 +282,12 @@ int main(void) {
 			stage("scripts");
 			VALUE out = Qnil;
 			// Native checks first; their lines prefix the script output.
-			const int probe_limit = (int)(__stacksize__ / 1024) - 64;
-			int fires_kb = stack_probe(0, probe_limit);
+			// Stack check: must fire, between half the stack and 8 KiB before its end (Ruby
+			// reserves 64 KiB, patch 0001); recursion stops 32 KiB before the end regardless.
+			volatile char stack_top_marker = 0;
+			int fired = 0;
+			size_t used = stack_probe((const char *)&stack_top_marker, __stacksize__ - 32 * 1024, &fired);
+			int stack_ok = fired && used >= __stacksize__ / 2 && used <= __stacksize__ - 8 * 1024;
 			int vstate = 0;
 			VALUE vfp_ok = rb_protect(check_coroutine_vfp, Qnil, &vstate);
 			if (vstate) rb_set_errinfo(Qnil);
@@ -280,12 +303,13 @@ int main(void) {
 			                          "check native_pthread %s\n",
 			                          (!lstate && leak_kb <= 4096) ? "ok" : "FAILED", leak_kb, pt);
 			native = rb_str_plus(native, rb_sprintf(
-			                          "check native_stack_limit %s (fires at ~%d KiB of %lu)\n"
+			                          "check native_stack_limit %s (%s at ~%lu KiB of %lu)\n"
 			                          "check coroutine_vfp %s\n",
-			                          fires_kb < probe_limit ? "ok" : "FAILED", fires_kb,
+			                          stack_ok ? "ok" : "FAILED", fired ? "fires" : "never fired, stopped",
+			                          (unsigned long)(used / 1024),
 			                          (unsigned long)(__stacksize__ / 1024),
 			                          (!vstate && vfp_ok == Qtrue) ? "ok" : "FAILED (d8 not preserved across Fiber switch)"));
-			if (fires_kb >= probe_limit || vstate || vfp_ok != Qtrue) status = -1;
+			if (!stack_ok || vstate || vfp_ok != Qtrue) status = -1;
 			if (status == 0 && access(TEST_DIR "/main.rb", F_OK) == 0) {
 				status = run_script("main.rb", &out);
 			} else {
@@ -301,7 +325,9 @@ int main(void) {
 	stage("report");
 	u64 total_ms = osGetTime() - t0;
 	struct mallinfo mi = mallinfo();
-	const char *detail_c = NIL_P(detail) ? "" : StringValueCStr(detail);
+	// detail is a String (rb_str_plus) or nil; written with its length, NUL bytes included.
+	const char *detail_p = NIL_P(detail) ? "" : RSTRING_PTR(detail);
+	size_t detail_len = NIL_P(detail) ? 0 : (size_t)RSTRING_LEN(detail);
 	char line[224];
 	snprintf(line, sizeof line,
 	         "RMXP3DS_TEST rubybench %s init_ms=%llu total_ms=%llu new3ds=%d heap_kb=%lu malloc_arena_kb=%lu "
@@ -310,18 +336,14 @@ int main(void) {
 	         is_new3ds ? 1 : 0, (unsigned long)(envGetHeapSize() / 1024), (unsigned long)(mi.arena / 1024),
 	         (unsigned long)(mi.uordblks / 1024));
 
-	char *results = malloc(strlen(line) + strlen(detail_c) + 1);
-	if (results != NULL) {
-		strcpy(results, line);
-		strcat(results, detail_c);
-		write_test_file("rubybench-results.txt", results);
-		free(results);
-	}
+	// Details first: rubybench.txt is what runners wait for.
+	write_test_file_n("rubybench-results.txt", line, detail_p, detail_len);
 	write_test_file("rubybench.txt", line);
-	printf("%s%s", line, detail_c);
+	fputs(line, stdout);
+	fwrite(detail_p, 1, detail_len, stdout);
 	if (link_fd >= 0) {
 		fputs(line, stderr);
-		fputs(detail_c, stderr);
+		fwrite(detail_p, 1, detail_len, stderr);
 	}
 
 	bool autoexit = access(TEST_DIR "/autoexit", F_OK) == 0;

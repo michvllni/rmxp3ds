@@ -87,14 +87,21 @@ claim_display() {
   exit 1
 }
 
+# Validate --sd-file before creating anything (an error exit leaves no temporary HOME behind).
+for spec in "${SD_FILES[@]}"; do
+  src="${spec%%=*}" dest="${spec#*=}"
+  case "/$dest/" in
+    //*|*/../*) echo "azahar-smoke.sh: --sd-file DEST must be relative without '..': $dest" >&2; exit 2 ;;
+  esac
+  [ -f "$src" ] || { echo "azahar-smoke.sh: --sd-file source $src not found" >&2; exit 2; }
+done
+
 AZ_HOME="$(mktemp -d)"
 SDMC="$AZ_HOME/.local/share/azahar-emu/sdmc"
 mkdir -p "$SDMC/rmxp3ds/test"
 : >"$SDMC/rmxp3ds/test/autoexit"
 for spec in "${SD_FILES[@]}"; do
   src="${spec%%=*}" dest="${spec#*=}"
-  case "$dest" in /*|*..*) echo "azahar-smoke.sh: --sd-file DEST must be relative: $dest" >&2; exit 2 ;; esac
-  [ -f "$src" ] || { echo "azahar-smoke.sh: --sd-file source $src not found" >&2; exit 2; }
   mkdir -p "$(dirname "$SDMC/$dest")"
   cp "$src" "$SDMC/$dest"
 done
