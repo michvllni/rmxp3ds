@@ -14,8 +14,10 @@ Status, findings, measurements, sources: [NOTES.md](NOTES.md).
 
 ## Layout
 ```
-.devcontainer/   Dockerfile, devcontainer.json (portable), gpu/ (opt-in /dev/dri + host network),
-                 azahar-headless.sh, azahar/ (qt-config.ini seed)
+.devcontainer/   Dockerfile (all version pins), apt-packages.txt, install-tools.sh (shared with the
+                 workspace setup), devcontainer.json (portable), linux-host/ (opt-in /dev/dri + host
+                 network), azahar-headless.sh, azahar/ (qt-config.ini seed)
+.github/         CI workflows
 runtime/         submodule: mkxp-z-3ds
 convert/         converter (Ruby)                      — from M5
 tools/           setup-workspace.sh, bench/, fixture generators
@@ -25,9 +27,13 @@ docs/            PLAN.md, DECISIONS.md
 
 ## Environment
 - Reference: the dev container (`.devcontainer/`). CI builds the same image.
-- Maintainer's Coder workspace (no Docker): `tools/setup-workspace.sh` (M0) installs the same pinned
-  toolchain into `/home/vscode/volume/.toolchain` (persistent) and links `/opt/devkitpro`. Re-run it
-  after a workspace restart. Source the printed env (`DEVKITPRO`, `DEVKITARM`, `PATH`).
+- Maintainer's Coder workspace (no Docker): `tools/setup-workspace.sh` installs the same pinned
+  toolchain into `~/volume/.toolchain` (persistent) and links `/opt/devkitpro`, `/opt/tools`.
+  Re-run it after a workspace restart, then `. ~/volume/.toolchain/env.sh`.
+- Both environments: `/opt/devkitpro` (devkitARM, libctru, citro3d, portlibs), `/opt/tools/ruby`
+  (host Ruby = runtime's Ruby), `/opt/tools/azahar`, `/opt/tools/bin` (makerom, bannertool).
+- Changing a version: edit the `ARG` in `.devcontainer/Dockerfile` (single source of truth), update
+  NOTES.md with the source, re-run `tools/setup-workspace.sh`.
 - devkitPro's own servers (devkitpro.org, pkg/apt.devkitpro.org) answer 403 from cloud IPs: never
   call `dkp-pacman` in CI or scripts; everything comes from the pinned `devkitpro/devkitarm` image.
 - Heavy commands in the Coder workspace go through `memguard -- <cmd>` (4 GiB limit); use
@@ -36,10 +42,12 @@ docs/            PLAN.md, DECISIONS.md
 ## Build / test / run
 | What | Command |
 |---|---|
+| Workspace toolchain | `tools/setup-workspace.sh && . ~/volume/.toolchain/env.sh` |
+| Lint scripts | `git ls-files '*.sh' \| xargs shellcheck` |
 | Headless emulator | `azahar-headless <file.3dsx>`; screenshots via mcp-azahar |
 | Console | `3dslink -a <3ds-ip> <file.3dsx>`; stdout: `3dslink -s` |
 
-M0 adds the workspace setup script, a hello-world target and CI. Fill in this table as milestones add targets.
+CI (`.github/workflows/ci.yml`): shellcheck, dev container image build. Fill in this table as milestones add targets.
 
 ## Conventions
 - Conventional Commits; one reviewable topic per PR; docs (README, AGENTS, NOTES, docs/*) updated in

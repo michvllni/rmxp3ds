@@ -17,6 +17,11 @@ git clone --recurse-submodules https://github.com/michvllni/rmxp3ds
 ```
 Open the folder in the dev container (`.devcontainer/`, VS Code or devcontainer CLI). It provides
 devkitARM/libctru/citro3d, host Ruby, packaging tools and a headless Azahar emulator.
+- Default config: portable, software rendering.
+- `.devcontainer/linux-host/`: Linux hosts with an iGPU (`/dev/dri`) and host networking for
+  `3dslink -s`.
+- Without Docker (Debian trixie host): `tools/setup-workspace.sh` installs the same pinned
+  toolchain; then `. ~/volume/.toolchain/env.sh`.
 
 ## Games
 No game content is part of this project. You convert games you own; real games stay outside the

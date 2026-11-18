@@ -1,27 +1,20 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Portable default: works with local Docker (VS Code / devcontainer CLI) on any host and with
+// builders that ignore runArgs/mounts (e.g. Coder envbuilder). Azahar uses Mesa software
+// rendering here. On a Linux host with an iGPU, or to use `3dslink -s`, pick the "linux-host"
+// configuration (.devcontainer/linux-host/devcontainer.json) instead.
 {
-  "name": "xp3ds",
-  "build": {
-    "dockerfile": "Dockerfile",
-    "args": { "RUBY_VERSION": "3.1.6" }
-  },
+  "name": "rmxp3ds",
+  "build": { "dockerfile": "Dockerfile", "context": "." },
+  "remoteUser": "dev",
+  "updateRemoteUserUID": true,
 
-  // Host networking so `3dslink -a <3ds-ip> build/xp3ds.3dsx` reaches the console (Linux hosts).
-  // On Docker Desktop (macOS/Windows), use 3dslink with an explicit IP; host mode may be limited.
-  // --device=/dev/dri: GPU acceleration for headless Azahar (Intel/AMD iGPU). Remove it on hosts
-  // without /dev/dri; Azahar then falls back to Mesa software rendering.
-  "runArgs": ["--network=host", "--device=/dev/dri"],
-
-  // Your own game folders (never committed). Create the folder on the host first.
+  // Your own game folders (never committed). initializeCommand creates the folder on the host,
+  // because Docker refuses a bind mount whose source does not exist.
+  "initializeCommand": "mkdir -p \"${localEnv:HOME}/rmxp3ds-games\"",
   "mounts": [
-    "source=${localEnv:HOME}/xp3ds-games,target=/workspaces/games,type=bind,consistency=cached"
+    "source=${localEnv:HOME}/rmxp3ds-games,target=/workspaces/games,type=bind"
   ],
-
-  "containerEnv": {
-    "DEVKITPRO": "/opt/devkitpro",
-    "DEVKITARM": "/opt/devkitpro/devkitARM",
-    // Virtual display used by azahar-headless; screenshots: import -window root shot.png
-    "AZAHAR_DISPLAY": ":99"
-  },
 
   "customizations": {
     "vscode": {

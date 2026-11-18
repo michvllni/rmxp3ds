@@ -1,7 +1,8 @@
 # Azahar settings for the dev container
 
-Put Azahar's `qt-config.ini` here to give every container the same emulator setup.
-`postCreateCommand` copies it to `~/.config/azahar-emu/`.
+Put Azahar's `qt-config.ini` here to give every container and workspace the same emulator setup.
+`postCreateCommand` (dev container) and `tools/setup-workspace.sh` (Coder workspace) copy it to
+`~/.config/azahar-emu/qt-config.ini` (path verified for Azahar 2126.2, see NOTES.md).
 
 Create it once: start `azahar-headless` (or Azahar on your desktop), set
 - System model: New 3DS
@@ -10,4 +11,3 @@ Create it once: start `azahar-headless` (or Azahar on your desktop), set
 - Audio output: off / null
 
 then copy the resulting `qt-config.ini` into this folder and commit it.
-Verify the config path for the installed Azahar version; it may differ.

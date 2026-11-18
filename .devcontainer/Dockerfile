@@ -1,71 +1,70 @@
-# Dev container for xp3ds: devkitARM + libctru/citro3d, host Ruby for the converter
-# and for cross-compiling CRuby (needs a matching "baseruby"), plus 3DS packaging tools.
-FROM devkitpro/devkitarm:latest
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Dev container for rmxp3ds: devkitARM + libctru/citro3d + 3DS portlibs, host Ruby (converter,
+# baseruby for the CRuby cross build), 3DS packaging tools and a headless Azahar emulator.
+#
+# All pins live in the ARGs below. tools/setup-workspace.sh parses them to install the same
+# versions in the Coder workspace (docs/DECISIONS.md D10), so keep the `ARG NAME=value` format.
+# Sources for every value: NOTES.md "Pinned versions and sources".
+#
+# Base is Debian trixie, not the bookworm-based devkitarm image: Azahar 2126.2 and makerom 0.19.0
+# need glibc >= 2.38. devkitPro's toolchain is copied from its image (devkitPro's package servers
+# reject cloud IPs, so dkp-pacman is never used).
 
-ENV DEBIAN_FRONTEND=noninteractive
+ARG DEVKITARM_IMAGE=devkitpro/devkitarm:20260610@sha256:116afba8df8453961de2936ffab20dd441edf4d682856c1ec8b0e53d7ed0bbf5
+ARG BASE_IMAGE=debian:trixie-20261027-slim@sha256:f6b08b09a05725f9431502d3b5714f5c4576e82c1a84fa1debe0c24a7e0c3ec4
 
-# Must match the Ruby version the runtime embeds (check mkxp-z), so ISeq binaries load.
-ARG RUBY_VERSION=3.1.6
-# Packaging tools — check the release pages for current versions/asset names.
-ARG MAKEROM_URL=https://github.com/3DSGuy/Project_CTR/releases/download/makerom-v0.18.4/makerom-v0.18.4-ubuntu_x86_64.zip
-ARG BANNERTOOL_URL=https://github.com/Epicpkmn11/bannertool/releases/latest/download/bannertool.zip
-# Azahar AppImage (check the releases page for the current asset name; pin a version for reproducibility)
-ARG AZAHAR_URL=https://github.com/azahar-emu/azahar/releases/latest/download/azahar.AppImage
+FROM ${DEVKITARM_IMAGE} AS devkitpro
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-        build-essential git curl ca-certificates unzip pkg-config \
-        autoconf automake libtool bison \
-        libyaml-dev libssl-dev libreadline-dev zlib1g-dev libffi-dev libgdbm-dev \
-        cmake ninja-build meson \
-        python3 python3-pip \
-        ffmpeg imagemagick \
-        gdb-multiarch \
-        xvfb xauth x11-utils \
-        libgl1-mesa-dri libegl1 mesa-vulkan-drivers \
-        libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0 \
-        libxcb-keysyms1 libxcb-randr0 libxcb-render-util0 libxcb-xinerama0 \
-        libxcb-xkb1 libfontconfig1 libdbus-1-3 \
-    && rm -rf /var/lib/apt/lists/*
+FROM ${BASE_IMAGE}
 
-# 3DS libraries. Portlibs that don't exist under that name only warn.
-RUN dkp-pacman -Syu --noconfirm \
-    && dkp-pacman -S --noconfirm --needed 3ds-dev \
-    && for p in 3ds-zlib 3ds-libpng 3ds-freetype 3ds-libogg 3ds-libvorbisidec 3ds-bzip2; do \
-         dkp-pacman -S --noconfirm --needed "$p" || echo "WARN: package $p not available"; \
-       done \
-    && dkp-pacman -Scc --noconfirm
+# Must match the Ruby version mkxp-z embeds (runtime/subprojects/ruby-3.1.wrap), so ISeq binaries load.
+ARG RUBY_VERSION=3.1.3
+ARG RUBY_BUILD_VERSION=v20261023
+ARG AZAHAR_VERSION=2126.2
+ARG AZAHAR_SHA256=af037f8b775198f636b14bcfe63fb401b02246ebfefe1025bb905ce042556960
+ARG MAKEROM_VERSION=v0.19.0
+ARG MAKEROM_SHA256=287b809dec064e0ad597e3d272c49ecb7eed41693d5ee6fef9d8a8aa24c2497e
+ARG BANNERTOOL_VERSION=v1.2.2
+ARG BANNERTOOL_SHA256=e4259c08fe8944ebadd5f4b96f9a8603e5427338074cfc46323fbbc3410d51ed
 
-# Host Ruby (converter + baseruby for the CRuby cross build)
-RUN git clone --depth 1 https://github.com/rbenv/ruby-build.git /tmp/ruby-build \
-    && /tmp/ruby-build/install.sh \
-    && rm -rf /tmp/ruby-build \
-    && ruby-build "${RUBY_VERSION}" /opt/ruby
-ENV PATH=/opt/ruby/bin:${PATH}
+ENV DEBIAN_FRONTEND=noninteractive \
+    LANG=C.UTF-8
 
-# makerom + bannertool for CIA builds (forwarders, release CIA)
-RUN mkdir -p /tmp/tools && cd /tmp/tools \
-    && curl -fL -o makerom.zip "${MAKEROM_URL}" && unzip -o makerom.zip \
-    && curl -fL -o bannertool.zip "${BANNERTOOL_URL}" && unzip -o bannertool.zip \
-    && install -m 755 "$(find . -type f -name makerom | head -n1)" /usr/local/bin/makerom \
-    && install -m 755 "$(find . -type f -path '*linux-x86_64*' -name bannertool | head -n1)" /usr/local/bin/bannertool \
-    && cd / && rm -rf /tmp/tools
+COPY apt-packages.txt /tmp/apt-packages.txt
+RUN apt-get update \
+    && grep -vE '^[[:space:]]*(#|$)' /tmp/apt-packages.txt | xargs apt-get install -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/* /tmp/apt-packages.txt
 
-# Azahar, headless: AppImage extracted (no FUSE in containers), run on a virtual X display.
-# Rendering uses /dev/dri if passed in, otherwise Mesa software rendering (llvmpipe/lavapipe).
-RUN cd /opt && curl -fL -o azahar.AppImage "${AZAHAR_URL}" \
-    && chmod +x azahar.AppImage && ./azahar.AppImage --appimage-extract >/dev/null \
-    && mv squashfs-root azahar && rm azahar.AppImage
+COPY --from=devkitpro /opt/devkitpro /opt/devkitpro
+
+COPY install-tools.sh /usr/local/lib/rmxp3ds/install-tools.sh
+RUN RUBY_VERSION="${RUBY_VERSION}" RUBY_BUILD_VERSION="${RUBY_BUILD_VERSION}" \
+    AZAHAR_VERSION="${AZAHAR_VERSION}" AZAHAR_SHA256="${AZAHAR_SHA256}" \
+    MAKEROM_VERSION="${MAKEROM_VERSION}" MAKEROM_SHA256="${MAKEROM_SHA256}" \
+    BANNERTOOL_VERSION="${BANNERTOOL_VERSION}" BANNERTOOL_SHA256="${BANNERTOOL_SHA256}" \
+    /usr/local/lib/rmxp3ds/install-tools.sh --prefix /opt/tools
+
 COPY azahar-headless.sh /usr/local/bin/azahar-headless
-RUN chmod +x /usr/local/bin/azahar-headless
+RUN chmod 755 /usr/local/bin/azahar-headless
 
 ENV DEVKITPRO=/opt/devkitpro \
     DEVKITARM=/opt/devkitpro/devkitARM \
-    PATH=/opt/devkitpro/tools/bin:/opt/devkitpro/devkitARM/bin:${PATH}
+    AZAHAR_HOME=/opt/tools/azahar \
+    AZAHAR_DISPLAY=:99 \
+    PATH=/opt/tools/bin:/opt/tools/ruby/bin:/opt/devkitpro/tools/bin:/opt/devkitpro/devkitARM/bin:${PATH}
 
-# Sanity check: fail the build early if a key tool is missing
+# Fail the build early if a key tool is missing or cannot run on this base.
 RUN arm-none-eabi-gcc --version >/dev/null \
-    && tex3ds --help >/dev/null 2>&1; \
-    command -v 3dslink && command -v 3dsxtool && command -v makerom && command -v bannertool && ruby -v \
-    && test -x /opt/azahar/AppRun
+    && tex3ds --help >/dev/null \
+    && 3dsxtool 2>&1 | grep -q Usage \
+    && command -v 3dslink smdhtool picasso >/dev/null \
+    && makerom 2>&1 | grep -qi makerom \
+    && bannertool 2>&1 | grep -qi bannertool \
+    && ruby -e 'exit(RUBY_VERSION == ENV.fetch("RUBY_VERSION") ? 0 : 1)' \
+    && test -x /opt/tools/azahar/AppRun \
+    && ! ldd /opt/tools/azahar/usr/bin/azahar | grep 'not found'
 
-WORKDIR /workspaces/xp3ds
+# Non-root user for local Docker and CI (devcontainer CLI maps it to the host UID).
+RUN useradd --create-home --shell /bin/bash --uid 1000 dev
+USER dev
+WORKDIR /workspaces/rmxp3ds

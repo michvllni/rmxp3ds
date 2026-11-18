@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Linux hosts only. Adds to the portable default (../devcontainer.json):
+//  --device=/dev/dri  GPU acceleration for headless Azahar (Intel/AMD iGPU; needed for PLAN §6.1
+//                     calibration). Docker refuses to start the container if /dev/dri is missing.
+//  --network=host     so the console can connect back to `3dslink -s` (stdout capture).
+// The non-root user also needs the host group of /dev/dri/renderD128. Its GID differs per host and
+// usually has no name inside the container: find it with `stat -c %g /dev/dri/renderD128` and add
+// "--group-add=<gid>" to runArgs if Azahar falls back to software rendering.
+{
+  "name": "rmxp3ds (Linux host: GPU + host network)",
+  "build": { "dockerfile": "../Dockerfile", "context": ".." },
+  "remoteUser": "dev",
+  "updateRemoteUserUID": true,
+  "runArgs": ["--network=host", "--device=/dev/dri"],
+
+  // Your own game folders (never committed). initializeCommand creates the folder on the host,
+  // because Docker refuses a bind mount whose source does not exist.
+  "initializeCommand": "mkdir -p \"${localEnv:HOME}/rmxp3ds-games\"",
+  "mounts": [
+    "source=${localEnv:HOME}/rmxp3ds-games,target=/workspaces/games,type=bind"
+  ],
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "llvm-vs-code-extensions.vscode-clangd",
+        "Shopify.ruby-lsp",
+        "tamasfe.even-better-toml"
+      ],
+      "settings": {
+        "C_Cpp.default.compilerPath": "/opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc",
+        "C_Cpp.default.includePath": [
+          "${workspaceFolder}/**",
+          "/opt/devkitpro/libctru/include",
+          "/opt/devkitpro/portlibs/3ds/include"
+        ],
+        "C_Cpp.default.defines": ["__3DS__", "ARM11"]
+      }
+    }
+  },
+
+  // Seeds Azahar's settings (New 3DS model, CPU clock, renderer, audio off) from the repo, if present.
+  "postCreateCommand": "arm-none-eabi-gcc --version | head -n1 && ruby -v && if [ -f .devcontainer/azahar/qt-config.ini ]; then mkdir -p ~/.config/azahar-emu && cp .devcontainer/azahar/qt-config.ini ~/.config/azahar-emu/; fi"
+}
