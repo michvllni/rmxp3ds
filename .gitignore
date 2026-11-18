@@ -1,0 +1,24 @@
+# Build output
+build/
+*.3dsx
+*.smdh
+*.elf
+*.cia
+*.t3x
+
+# Game content never goes into the repo (see AGENTS.md "Content and licenses")
+/games/
+*.rxdata
+*.rvdata*
+*.rgssad
+*.rgss3a
+
+# Generated test fixtures (scripts in tests/fixtures/ create them)
+tests/fixtures/out/
+
+# Tooling
+.bundle/
+vendor/bundle/
+coverage/
+*.log
+.DS_Store
