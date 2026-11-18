@@ -21,7 +21,8 @@
 # OPTIONS
 #   --toolchain-dir DIR  installation directory (default: $HOME/volume/.toolchain)
 #   --skip-apt           do not install Debian packages
-#   --jobs N             parallel build jobs (default: $MEMGUARD_CPUS, else nproc)
+#   --jobs N             parallel build jobs (default: workspace CPUs from `memguard --info`,
+#                        else nproc)
 #   -h, --help           show this help
 #
 # EXAMPLE
@@ -35,7 +36,16 @@ usage() {
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 TC="${HOME}/volume/.toolchain"
 SKIP_APT=0
-JOBS="${MEMGUARD_CPUS:-$(nproc)}"
+# default_jobs: prints the workspace's CPU count (memguard knows the container limit; nproc shows
+# the node), falling back to nproc.
+default_jobs() {
+  local n=""
+  if command -v memguard >/dev/null; then
+    n="$(memguard --info 2>/dev/null | sed -n 's/^cpus: *\([0-9][0-9]*\)$/\1/p')"
+  fi
+  printf '%s' "${n:-$(nproc)}"
+}
+JOBS="$(default_jobs)"
 while [ $# -gt 0 ]; do
   case "$1" in
     --toolchain-dir) TC="${2:?--toolchain-dir needs a value}"; shift 2 ;;
@@ -79,7 +89,7 @@ registry_token() {
 # install_devkitpro IMAGE DEST: extracts /opt/devkitpro of the linux/amd64 variant of IMAGE
 # (name:tag@sha256:digest) into DEST, applying layer whiteouts. Skips if DEST is stamped with IMAGE.
 install_devkitpro() {
-  local image="$1" dest="$2" repo digest token accept manifest layers layer tmp wh target
+  local image="$1" dest="$2" repo digest token accept manifest layers layer media tmp wh target
   if [ "$(cat "$dest/.rmxp3ds-image" 2>/dev/null || true)" = "$image" ]; then
     echo "devkitpro: up to date"
     return
@@ -94,15 +104,26 @@ install_devkitpro() {
     digest="$(jq -r '.manifests[] | select(.platform.os=="linux" and .platform.architecture=="amd64") | .digest' <<<"$manifest")"
     manifest="$(curl -fsS -H "Authorization: Bearer $token" -H "Accept: $accept" "https://registry-1.docker.io/v2/$repo/manifests/$digest")"
   fi
-  layers="$(jq -r '.layers[].digest' <<<"$manifest")"
+  layers="$(jq -r '.layers[] | "\(.digest) \(.mediaType)"' <<<"$manifest")"
+  # Leftovers of an earlier failed run, then a temp dir removed on any exit from here on.
+  rm -rf "$(dirname "$dest")"/.dkp.*
   tmp="$(mktemp -d "$(dirname "$dest")/.dkp.XXXXXX")"
+  # shellcheck disable=SC2064 # expand $tmp now: it is local to this function
+  trap "rm -rf '$tmp'" EXIT
   mkdir -p "$tmp/root"
-  for layer in $layers; do
+  while read -r layer media; do
+    case "$media" in
+      application/vnd.oci.image.layer.v1.tar+gzip|application/vnd.docker.image.rootfs.diff.tar.gzip) ;;
+      *) echo "setup-workspace.sh: unsupported layer type $media in $image" >&2; exit 1 ;;
+    esac
     curl -fsSL --retry 3 -H "Authorization: Bearer $token" -o "$tmp/layer.tgz" \
       "https://registry-1.docker.io/v2/$repo/blobs/$layer"
     echo "${layer#sha256:}  $tmp/layer.tgz" | sha256sum -c --quiet -
-    # Only opt/devkitpro is needed; other members are skipped.
-    tar -xzf "$tmp/layer.tgz" -C "$tmp/root" --no-same-owner --wildcards 'opt/devkitpro*' 2>/dev/null || true
+    # Only opt/devkitpro is needed: skip layers without it, let every other tar error fail.
+    # (grep without -q: an early exit would SIGPIPE tar and fail the pipeline under pipefail)
+    if tar -tzf "$tmp/layer.tgz" | grep '^opt/devkitpro' >/dev/null; then
+      tar -xzf "$tmp/layer.tgz" -C "$tmp/root" --no-same-owner --wildcards 'opt/devkitpro*'
+    fi
     rm -f "$tmp/layer.tgz"
     # Whiteouts: .wh.NAME deletes NAME from lower layers; .wh..wh..opq empties the directory.
     while IFS= read -r -d '' wh; do
@@ -112,12 +133,13 @@ install_devkitpro() {
            rm -rf "${target:?}" "$wh" ;;
       esac
     done < <(find "$tmp/root" -name '.wh.*' -print0)
-  done
+  done <<<"$layers"
   [ -x "$tmp/root/opt/devkitpro/devkitARM/bin/arm-none-eabi-gcc" ] \
     || { echo "setup-workspace.sh: devkitARM not found in $image" >&2; exit 1; }
   rm -rf "$dest"
   mv "$tmp/root/opt/devkitpro" "$dest"
   rm -rf "$tmp"
+  trap - EXIT
   printf '%s\n' "$image" >"$dest/.rmxp3ds-image"
   echo "devkitpro: installed from $image"
 }
@@ -141,9 +163,18 @@ else
   "${INSTALL[@]}"
 fi
 
-sudo ln -sfn "$TC/devkitpro" /opt/devkitpro
-sudo ln -sfn "$TC/tools" /opt/tools
-sudo ln -sfn "$REPO/.devcontainer/azahar-headless.sh" /usr/local/bin/azahar-headless
+# link TARGET LINK: points the symlink LINK at TARGET; refuses to replace a real file or directory
+# (ln -sfn would create the link inside an existing directory instead).
+link() {
+  if [ -e "$2" ] && [ ! -L "$2" ]; then
+    echo "setup-workspace.sh: $2 exists and is not a symlink; move it away and re-run" >&2
+    exit 1
+  fi
+  sudo ln -sfn "$1" "$2"
+}
+link "$TC/devkitpro" /opt/devkitpro
+link "$TC/tools" /opt/tools
+link "$REPO/.devcontainer/azahar-headless.sh" /usr/local/bin/azahar-headless
 
 if [ -f "$REPO/.devcontainer/azahar/qt-config.ini" ] && [ ! -f "$HOME/.config/azahar-emu/qt-config.ini" ]; then
   mkdir -p "$HOME/.config/azahar-emu"

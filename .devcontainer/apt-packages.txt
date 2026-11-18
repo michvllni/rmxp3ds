@@ -25,6 +25,8 @@ ninja-build
 meson
 python3
 gdb-multiarch
+# JSON (tools/setup-workspace.sh registry access, scripts)
+jq
 
 # Converter / asset tools
 ffmpeg

@@ -32,6 +32,9 @@ docs/            PLAN.md, DECISIONS.md
   Re-run it after a workspace restart, then `. ~/volume/.toolchain/env.sh`.
 - Both environments: `/opt/devkitpro` (devkitARM, libctru, citro3d, portlibs), `/opt/tools/ruby`
   (host Ruby = runtime's Ruby), `/opt/tools/azahar`, `/opt/tools/bin` (makerom, bannertool).
+- Gems: in the image `/opt/tools` is root-owned, so `GEM_HOME=/home/dev/.gem`; in the workspace
+  gems go to `/opt/tools/ruby` (user-owned volume). Prefer `bundle config set path vendor/bundle`.
+- Windows hosts: only via WSL2 (scripts need LF, `.gitattributes` enforces it).
 - Changing a version: edit the `ARG` in `.devcontainer/Dockerfile` (single source of truth), update
   NOTES.md with the source, re-run `tools/setup-workspace.sh`.
 - devkitPro's own servers (devkitpro.org, pkg/apt.devkitpro.org) answer 403 from cloud IPs: never

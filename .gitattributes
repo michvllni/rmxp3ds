@@ -1,0 +1,5 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Scripts are copied into the Linux image and run on Linux: keep LF on every platform.
+*.sh text eol=lf
+Dockerfile text eol=lf
+.devcontainer/** text eol=lf

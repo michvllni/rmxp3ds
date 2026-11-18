@@ -51,20 +51,22 @@ ENV DEVKITPRO=/opt/devkitpro \
     DEVKITARM=/opt/devkitpro/devkitARM \
     AZAHAR_HOME=/opt/tools/azahar \
     AZAHAR_DISPLAY=:99 \
-    PATH=/opt/tools/bin:/opt/tools/ruby/bin:/opt/devkitpro/tools/bin:/opt/devkitpro/devkitARM/bin:${PATH}
+    GEM_HOME=/home/dev/.gem \
+    PATH=/home/dev/.gem/bin:/opt/tools/bin:/opt/tools/ruby/bin:/opt/devkitpro/tools/bin:/opt/devkitpro/devkitARM/bin:${PATH}
 
 # Fail the build early if a key tool is missing or cannot run on this base.
 RUN arm-none-eabi-gcc --version >/dev/null \
     && tex3ds --help >/dev/null \
     && 3dsxtool 2>&1 | grep -q Usage \
-    && command -v 3dslink smdhtool picasso >/dev/null \
+    && for t in 3dslink smdhtool picasso; do command -v "$t" >/dev/null || exit 1; done \
     && makerom 2>&1 | grep -qi makerom \
     && bannertool 2>&1 | grep -qi bannertool \
     && ruby -e 'exit(RUBY_VERSION == ENV.fetch("RUBY_VERSION") ? 0 : 1)' \
     && test -x /opt/tools/azahar/AppRun \
     && ! ldd /opt/tools/azahar/usr/bin/azahar | grep 'not found'
 
-# Non-root user for local Docker and CI (devcontainer CLI maps it to the host UID).
+# Non-root user for local Docker and CI (devcontainer CLI maps it to the host UID). /opt/tools is
+# root-owned, so gems go to GEM_HOME in the user's home (set above).
 RUN useradd --create-home --shell /bin/bash --uid 1000 dev
 USER dev
 WORKDIR /workspaces/rmxp3ds

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
-// Portable default: works with local Docker (VS Code / devcontainer CLI) on any host and with
+// Portable default: works with local Docker (VS Code / devcontainer CLI) on Linux, macOS and
+// Windows via WSL2 (open the folder from inside WSL; initializeCommand is a POSIX command), and with
 // builders that ignore runArgs/mounts (e.g. Coder envbuilder). Azahar uses Mesa software
 // rendering here. On a Linux host with an iGPU, or to use `3dslink -s`, pick the "linux-host"
 // configuration (.devcontainer/linux-host/devcontainer.json) instead.

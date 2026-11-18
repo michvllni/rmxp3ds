@@ -52,6 +52,7 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   trixie's OpenSSL 3.5 is used. ruby-build warns that 3.1.3 is end-of-life; we keep it because
   the runtime must match mkxp-z's embedded Ruby (host Ruby is a local build tool only).
 - The bannertool `v1.2.2` release binary prints `bannertool v1.2.0`; the sha256 pins the file.
+- First CI image build (PR #2, 2026-11-18): 4m50s on ubuntu-24.04, all build-time checks pass.
 - `tools/setup-workspace.sh` (2026-11-18, workspace): full install peak 2.8 GiB (Ruby build), re-run
   1.5 s when nothing changed.
 
