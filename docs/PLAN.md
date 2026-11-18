@@ -130,7 +130,7 @@ xp3ds/
 ├─ runtime/               # fork of mkxp-z (submodule or vendored)
 │  ├─ src/platform/3ds/   # libctru glue, input, audio
 │  └─ src/render/citro3d/ # renderer, tilemap, stereo
-├─ ruby/                  # CRuby cross-build scripts + patches
+│  └─ (CRuby 3DS port: build entry point + patches, see DECISIONS D12)
 ├─ convert/               # xp3ds-convert (Ruby gem)
 │  ├─ patches/<game-id>/
 │  └─ profiles/<game-id>.toml
