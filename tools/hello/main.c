@@ -2,9 +2,10 @@
 // M0 hello world for rmxp3ds: shows a text console on the top screen and reports a test result.
 //
 // Self-reporting test mode (the pattern the runtime's test mode follows, PLAN §6.2):
-// after RESULT_FRAME frames it writes one result line to sdmc:/rmxp3ds/test/hello.txt and to
-// stdout. Started via `3dslink -s`, stdout goes to the PC; in Azahar the file lands in the virtual
-// SD card. Without 3dslink the line is shown on the top screen instead. The app then waits for
+// after RESULT_FRAME frames it writes one result line to sdmc:/rmxp3ds/test/hello.txt, shows it
+// on the top screen and writes it to stderr. Started via `3dslink -s`, stderr goes to the PC
+// (stdout stays on the screen console); in Azahar the file lands in the virtual SD card. The app
+// then waits for
 // START, or, when sdmc:/rmxp3ds/test/autoexit exists (unattended runs), exits AUTOEXIT_DELAY
 // frames later (time for a screenshot of the final state).
 #include <3ds.h>
@@ -19,7 +20,8 @@
 #define SOC_BUFFER_SIZE 0x100000
 #define SOC_ALIGN 0x1000
 
-// Connects stdout/stderr to the 3dslink host if the app was started by 3dslink.
+// Connects stderr to the 3dslink host if the app was started by 3dslink (stdout stays on the
+// screen console).
 // Returns the socket fd, or -1 if not started by 3dslink or on failure.
 static int connect_3dslink(u32 **soc_buffer) {
 	if (__3dslink_host.s_addr == 0) return -1;
@@ -30,7 +32,7 @@ static int connect_3dslink(u32 **soc_buffer) {
 		*soc_buffer = NULL;
 		return -1;
 	}
-	return link3dsStdio();
+	return link3dsStdioForDebug();
 }
 
 // Writes the test result line to sdmc:/rmxp3ds/test/hello.txt. Returns 0 on success.
@@ -69,14 +71,12 @@ int main(void) {
 			snprintf(line, sizeof line, "RMXP3DS_TEST hello PASS frames=%lu new3ds=%d\n",
 			         (unsigned long)frame, is_new3ds ? 1 : 0);
 			int werr = write_result(line);
+			printf("\x1b[8;2H%s", line);
+			printf("\x1b[9;2Hresult file: %s\n", werr == 0 ? "written" : "FAILED");
 			if (link_fd >= 0) {
-				// stdout is the 3dslink host
-				fputs(line, stdout);
-				printf("result file: %s\n", werr == 0 ? "written" : "FAILED");
-				fflush(stdout);
-			} else {
-				printf("\x1b[8;2H%s", line);
-				printf("\x1b[9;2Hresult file: %s\n", werr == 0 ? "written" : "FAILED");
+				// stderr is the 3dslink host
+				fputs(line, stderr);
+				fprintf(stderr, "result file: %s\n", werr == 0 ? "written" : "FAILED");
 			}
 			reported = true;
 		} else if (reported && autoexit && ++frame >= RESULT_FRAME + AUTOEXIT_DELAY) {

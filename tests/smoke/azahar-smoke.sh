@@ -12,6 +12,8 @@
 #   sdmc:/PATH exists, prints it, and succeeds if a line matches REGEX (grep -E).
 #   Seeds .devcontainer/azahar/qt-config.ini if the repo has one.
 #   Exit codes: 0 pass, 1 fail (no match / timeout / emulator died), 2 usage error.
+#   A corrupt .3dsx can make Azahar allocate memory until the timeout (seen: ~3.7 GiB); no hard
+#   limit is set because Azahar reserves large address ranges. Use memguard in small workspaces.
 #   Azahar keeps running after the app exits and aborts on SIGTERM; its exit status is ignored,
 #   the result file is the verdict.
 #
@@ -21,7 +23,8 @@
 #   --expect REGEX     extended regex a result line must match
 #   --timeout SEC      seconds to wait for the result file (default 120)
 #   --screenshot PNG   save a screenshot of the display when the result appears or on timeout
-#   --display :N       X display for Xvfb (default $AZAHAR_DISPLAY or :99)
+#   --display :N       X display (default: the first free one from :100; an existing X server on
+#                      the given display is reused and not stopped)
 #   --keep-home        keep the temporary HOME (Azahar logs, virtual SD) and print its path
 #   -h, --help         show this help
 #
@@ -36,7 +39,7 @@ usage() {
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 FILE="" RESULT="" EXPECT="" TIMEOUT=120 SHOT="" KEEP=0
-DISPLAY_NUM="${AZAHAR_DISPLAY:-:99}"
+DISPLAY_NUM=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --3dsx) FILE="${2:?--3dsx needs a value}"; shift 2 ;;
@@ -56,6 +59,14 @@ fi
 [ -f "$FILE" ] || { echo "azahar-smoke.sh: $FILE not found" >&2; exit 2; }
 case "$TIMEOUT" in ''|*[!0-9]*) echo "azahar-smoke.sh: --timeout must be a number" >&2; exit 2 ;; esac
 FILE="$(cd "$(dirname "$FILE")" && pwd)/$(basename "$FILE")"
+
+# free_display: prints the first display from :100 without an X socket or lock file.
+free_display() {
+  local n=100
+  while [ -e "/tmp/.X11-unix/X$n" ] || [ -e "/tmp/.X$n-lock" ]; do n=$((n + 1)); done
+  printf ':%s' "$n"
+}
+[ -n "$DISPLAY_NUM" ] || DISPLAY_NUM="$(free_display)"
 
 AZ_HOME="$(mktemp -d)"
 SDMC="$AZ_HOME/.local/share/azahar-emu/sdmc"
@@ -94,7 +105,7 @@ screenshot() {
 # caller already leads a process group, and then $! is not the group.)
 ulimit -c 0 # Azahar crashes on SIGTERM; no core files
 set -m
-HOME="$AZ_HOME" AZAHAR_DISPLAY="$DISPLAY_NUM" azahar-headless "$FILE" >"$AZ_HOME/azahar.log" 2>&1 &
+HOME="$AZ_HOME" TMPDIR="$AZ_HOME" AZAHAR_DISPLAY="$DISPLAY_NUM" azahar-headless "$FILE" >"$AZ_HOME/azahar.log" 2>&1 &
 PGID=$!
 set +m
 disown "$PGID" # no job status message ("Aborted") when Azahar dies on SIGTERM
@@ -105,6 +116,7 @@ until [ -s "$SDMC/$RESULT" ]; do
   if ! kill -0 "$PGID" 2>/dev/null; then
     echo "azahar-smoke.sh: emulator exited before writing $RESULT; last log lines:" >&2
     tail -n 20 "$AZ_HOME/azahar.log" >&2
+    screenshot
     exit 1
   fi
   if [ "$SECONDS" -ge "$deadline" ]; then

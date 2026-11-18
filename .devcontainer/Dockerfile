@@ -71,3 +71,7 @@ RUN arm-none-eabi-gcc --version >/dev/null \
 RUN useradd --create-home --shell /bin/bash --uid 1000 dev
 USER dev
 WORKDIR /workspaces/rmxp3ds
+
+# The tools must work for a non-root user, not only for root (checks above run as root).
+RUN test -x /opt/tools/azahar/AppRun && test -x /opt/tools/azahar/usr/bin/azahar \
+    && arm-none-eabi-gcc --version >/dev/null && ruby -v >/dev/null

@@ -96,6 +96,9 @@ if want azahar; then
     (cd "$WORK" && ./azahar.AppImage --appimage-extract >/dev/null)
     rm -rf "$PREFIX/azahar"
     mv "$WORK/squashfs-root" "$PREFIX/azahar"
+    # The extracted tree keeps the squashfs root's 0700 mode; other users (CI runs the image with
+    # the runner's UID) must be able to run it.
+    chmod -R go+rX "$PREFIX/azahar"
     stamp azahar "$AZAHAR_VERSION"
   fi
 fi

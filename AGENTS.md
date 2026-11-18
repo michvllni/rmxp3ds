@@ -80,13 +80,18 @@ Azahar smoke test inside the image (screenshot uploaded as artifact `hello-smoke
 
 ## Self-reporting test mode
 Test programs (hello now, the runtime later) write one line `RMXP3DS_TEST <name> PASS|FAIL ...` to
-`sdmc:/rmxp3ds/test/<name>.txt` and, when started via `3dslink -s`, to stdout. If
+`sdmc:/rmxp3ds/test/<name>.txt`, show it on screen and, when started via `3dslink -s`, send it to
+stderr (redirected to the PC; stdout stays on the screen console). If
 `sdmc:/rmxp3ds/test/autoexit` exists they exit by themselves a few seconds after reporting.
-`tests/smoke/azahar-smoke.sh` drives this in headless Azahar (fresh HOME and virtual SD per run).
+`tests/smoke/azahar-smoke.sh` drives this in headless Azahar (fresh HOME, virtual SD and free X
+display per run).
 
 ## Pitfalls
 - Azahar stays open after a homebrew app exits and aborts on SIGTERM: judge runs by the result
   file, never by the emulator's exit status. Don't `pkill -f azahar` from a shell whose command
   line contains "azahar" (it kills itself); stop emulators by PID or process group.
+- A corrupt `.3dsx` can make Azahar allocate GiBs until the timeout: run it under `memguard` in the
+  workspace.
+- Files extracted from an AppImage keep mode 0700; `install-tools.sh` opens them for other users.
 - `runtime/` uses an HTTPS URL; a local `url.git@github.com:.insteadOf` rewrite is fine.
 - `/opt` in the Coder workspace is not persistent; only `/home/vscode/volume` is.
