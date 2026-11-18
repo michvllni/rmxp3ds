@@ -25,6 +25,23 @@ check.call('regexp', ('Map042' =~ /Map(\d+)/) == 0 && $1 == '042')
 check.call('exception', begin; raise ArgumentError, 'x'; rescue ArgumentError => e; e.message == 'x'; end)
 check.call('fiber', Fiber.new { Fiber.yield 1; 2 }.then { |f| [f.resume, f.resume] } == [1, 2])
 check.call('enumerator_next', [1, 2, 3].each.then { |e| [e.next, e.next] } == [1, 2])
+check.call('thread_value', Thread.new { 21 * 2 }.value == 42)
+order = []
+t = Thread.new { 2.times { |i| order << "t#{i}"; Thread.pass } }
+2.times { |i| order << "m#{i}"; Thread.pass }
+t.join
+check.call("thread_pass(#{order.join(',')})", order.sort == %w[m0 m1 t0 t1] && order != %w[m0 m1 t0 t1])
+q = Queue.new
+consumer = Thread.new { Array.new(3) { q.pop } }
+3.times { |i| q << i }
+check.call('queue', consumer.value == [0, 1, 2])
+mx = Mutex.new
+cv = ConditionVariable.new
+ready = false
+waiter = Thread.new { mx.synchronize { cv.wait(mx) until ready; :woke } }
+sleep 0.01
+mx.synchronize { ready = true; cv.signal }
+check.call('condvar', waiter.value == :woke)
 require 'zlib'
 blob = 'RMXP3DS' * 2000
 check.call('zlib', Zlib::Inflate.inflate(Zlib::Deflate.deflate(blob)) == blob)

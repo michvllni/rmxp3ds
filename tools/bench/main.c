@@ -8,6 +8,8 @@
 // then romfs:/<name>.rb. sdmc:/rmxp3ds/test/autoexit: exit a few seconds after reporting.
 #include <3ds.h>
 #include <malloc.h>
+#include <pthread.h>
+#include <time.h>
 #include <ruby.h>
 #include <ruby/encoding.h>
 #include <stdio.h>
@@ -106,6 +108,50 @@ static VALUE check_coroutine_vfp(VALUE unused) {
 	return (mine == mark && RFLOAT_VALUE(theirs) == 7.0) ? Qtrue : Qfalse;
 }
 
+// --- Native pthread check (below Ruby's GVL) -------------------------------------------------
+// libctru maps pthread_create to threadCreate(prio 0x3F, core 0): the new thread only runs while
+// the creator blocks. Checks that a pthread runs while main waits in pthread_cond_timedwait,
+// with the clock Ruby uses (CLOCK_MONOTONIC via pthread_condattr_setclock, if available).
+static pthread_mutex_t pt_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t pt_cond;
+static volatile int pt_ran;
+
+static void *pt_body(void *arg) {
+	(void)arg;
+	pthread_mutex_lock(&pt_lock);
+	pt_ran = 1;
+	pthread_cond_signal(&pt_cond);
+	pthread_mutex_unlock(&pt_lock);
+	return NULL;
+}
+
+// Returns a description: "ok (...)" or "FAILED (...)".
+static const char *check_native_pthread(char *buf, size_t size) {
+	pthread_condattr_t ca;
+	pthread_condattr_init(&ca);
+	int setclock = pthread_condattr_setclock(&ca, CLOCK_MONOTONIC);
+	pthread_cond_init(&pt_cond, &ca);
+	pthread_t t;
+	int rc = pthread_create(&t, NULL, pt_body, NULL);
+	if (rc != 0) {
+		snprintf(buf, size, "FAILED (pthread_create %d)", rc);
+		return buf;
+	}
+	struct timespec deadline;
+	clock_gettime(setclock == 0 ? CLOCK_MONOTONIC : CLOCK_REALTIME, &deadline);
+	deadline.tv_sec += 2;
+	int wait_rc = 0;
+	u64 t0 = osGetTime();
+	pthread_mutex_lock(&pt_lock);
+	while (!pt_ran && wait_rc == 0) wait_rc = pthread_cond_timedwait(&pt_cond, &pt_lock, &deadline);
+	pthread_mutex_unlock(&pt_lock);
+	u64 waited = osGetTime() - t0;
+	pthread_join(t, NULL);
+	snprintf(buf, size, "%s (setclock=%d wait_rc=%d waited_ms=%llu)", pt_ran ? "ok" : "FAILED", setclock, wait_rc,
+	         (unsigned long long)waited);
+	return buf;
+}
+
 // Recurses with ~1 KiB frames until ruby_stack_check() reports an imminent overflow; returns
 // the depth (~KiB of stack below this point) or limit if it never fires. Checks that CRuby knows
 // the main stack size (runtime/3ds/ruby/patches/0001); without it the limit is never reached.
@@ -201,8 +247,12 @@ int main(void) {
 			int vstate = 0;
 			VALUE vfp_ok = rb_protect(check_coroutine_vfp, Qnil, &vstate);
 			if (vstate) rb_set_errinfo(Qnil);
-			VALUE native = rb_sprintf("check native_stack_limit %s (fires at ~%d KiB of %lu)\n"
-			                          "check coroutine_vfp %s\n",
+			char ptbuf[96];
+			const char *pt = check_native_pthread(ptbuf, sizeof ptbuf);
+			if (strncmp(pt, "ok", 2) != 0) status = -1;
+			VALUE native = rb_sprintf("check native_pthread %s\n"
+			                          "check native_stack_limit %s (fires at ~%d KiB of %lu)\n"
+			                          "check coroutine_vfp %s\n", pt,
 			                          fires_kb < probe_limit ? "ok" : "FAILED", fires_kb,
 			                          (unsigned long)(__stacksize__ / 1024),
 			                          (!vstate && vfp_ok == Qtrue) ? "ok" : "FAILED (d8 not preserved across Fiber switch)");
