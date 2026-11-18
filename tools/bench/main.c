@@ -198,6 +198,12 @@ static int run_script(const char *name, VALUE *out) {
 		rb_set_errinfo(Qnil);
 		int st2 = 0;
 		VALUE msg = rb_protect(error_message, err, &st2);
+		if (st2) {
+			// full_message failed (e.g. inside a broken environment): fall back to inspect
+			rb_set_errinfo(Qnil);
+			msg = rb_protect(rb_inspect, err, &st2);
+			if (st2) rb_set_errinfo(Qnil);
+		}
 		*out = st2 ? rb_sprintf("%s: error (state %d), message unavailable\n", buf, state)
 		           : rb_sprintf("%s: %" PRIsVALUE "\n", buf, msg);
 		return -1;
