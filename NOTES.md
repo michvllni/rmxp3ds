@@ -190,6 +190,9 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   - **PICA facts found on the way:**
     - Clip z must lie in [-w, 0].
     - Render targets must be in VRAM (6 MB). Textures move there when first rendered into.
+    - The CPU cannot access VRAM on the console (permission fault; citro3d `texture.c`: "CPU
+      can't write to VRAM"), but Azahar allows it: copies to and from VRAM go through GX
+      (`C3D_SyncTextureCopy`), never `memcpy`.
     - Texture memory starts with the top row (t = 1).
     - `C3D_SetViewport` resets the scissor.
     - `DVLB_ParseFile` needs 4-byte-aligned data.
@@ -291,6 +294,17 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 
 ## Measurements
 Console numbers only, with date, commits of both repos and settings.
+
+### 2026-11-18 · Hardware run 3, attempt 1 · New 3DS · M3 checks (`tools/hw3`)
+- **Commits:** rmxp3ds `9a7d5c6`, mkxp-z-3ds `3855a84d` (`feat/3ds-gl-effects`); settings: kit
+  defaults (Hires factor 0.5, RGSS1, frame rate 40).
+- **Result:** crash before any result file. Luma3DS exception dump: data abort (type 3) in
+  `3dsx_app`, DFSR 0x80d (permission fault on a write), FAR 0x1f300008 (VRAM bank B), PC in
+  `memcpy` called from the VRAM migration in gl3ds `currentTarget` while a Window was drawn
+  (symbolized against a rebuild of the kit's source).
+- **Cause:** the CPU cannot write VRAM on the console; Azahar allows it, so the emulator checks
+  could not catch it. Fixed in mkxp-z-3ds `9c9e785e` (GX texture copies, render targets move
+  back to linear memory before CPU access). Attempt 2 follows with the fixed kit.
 
 ### 2026-11-18 · Hardware run 2 · New 3DS · M2 go/no-go benchmark
 - **Setup:**
