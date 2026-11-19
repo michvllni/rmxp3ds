@@ -28,7 +28,8 @@
 #                      the given display is reused and not stopped)
 #   --keep-home        keep the temporary HOME (Azahar logs, virtual SD) and print its path
 #   --gdb PORT         enable Azahar's GDB stub on PORT (connect arm-none-eabi-gdb with
-#                      `target remote localhost:PORT`; the app waits for the debugger)
+#                      `target remote localhost:PORT`; the app waits for the debugger, so
+#                      raise --timeout; not combinable with a seeded [Debugging] group)
 #   --sd-dir SRC=DEST  copy directory SRC (recursively) to DEST on the virtual SD card (DEST
 #                      relative to its root, e.g. rmxp3ds/game); --sd-file copies come after it,
 #                      so they can replace single files; repeatable
@@ -59,7 +60,8 @@ while [ $# -gt 0 ]; do
     --screenshot) SHOT="${2:?--screenshot needs a value}"; shift 2 ;;
     --display) DISPLAY_NUM="${2:?--display needs a value}"; shift 2 ;;
     --keep-home) KEEP=1; shift ;;
-    --gdb) GDB_PORT="${2:?--gdb needs a port}"; shift 2 ;;
+    --gdb) GDB_PORT="${2:?--gdb needs a port}"; shift 2
+      case "$GDB_PORT" in ''|*[!0-9]*) echo "azahar-smoke.sh: --gdb PORT must be a number" >&2; exit 2 ;; esac ;;
     --sd-file)
       case "${2:-}" in
         ?*=?*) SD_FILES+=("$2"); shift 2 ;;

@@ -148,8 +148,8 @@ begin
     check.call('scroll', near.call(c, tile_color.call(n_at.call(1, 1))), c.inspect)
   end
 
-  # no seams while scrolling by sub-tile amounts: at 0.625 scale tile edges fall between screen
-  # pixels; a row through opaque tiles (y = 1 * 32 + 16, columns 11..15) must never show
+  # no seams while scrolling by sub-tile amounts: below 1:1 (here factor 0.5, Essentials 0.625)
+  # tile edges fall between screen pixels; a row through opaque tiles (y = 1 * 32 + 16, columns 11..15) must never show
   # the black background or neighbouring atlas tiles' alpha (seen on the console as black lines)
   seams = []
   [3, 5, 7, 11, 13, 19, 21, 27, 29].each do |sx|

@@ -188,7 +188,8 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
     completely (snapshots checked by eye).
     - Route 5: 21.2 FPS (11.8 before), `Scene_Map#update` 32 ms (81 before).
     - Route 3: 28.1 FPS, update 23 ms.
-  - **Tile check** (`tests/runtime/tilecheck`, synthetic): 26 checks after two reviews.
+  - **Tile check** (`tests/runtime/tilecheck`, synthetic): 27 checks (two reviews, plus
+    `scroll_no_seams`).
   - **Frame profile and vertex optimization (fork https://github.com/michvllni/mkxp-z-3ds/pull/11):**
     - `RMXP3DSProfile.read` returns per-frame averages; the map probe logs them per map,
       together with Essentials' `updateMaps`, `updateSpritesets` and the native tilemap update.
@@ -233,7 +234,8 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
     findings included).
   - **Regression check:** engine check `compile_next_loops` compiles a method with 120
     `while`/`next` loops 60 times, interleaved with allocations. Built with the old `compile.o`,
-    the runtime timed out (crashed) on it; with the patch it passes (`checks=18`).
+    the runtime timed out (crashed) on it; with the patch it passed (engine check `checks=18` at
+    the time).
   - **Ruled out on the way:**
     - stack size (4 MiB);
     - the transient heap (`-DUSE_TRANSIENT_HEAP=0`);
@@ -542,7 +544,8 @@ Console numbers only, with date, commits of both repos and settings.
 - Local logs: `3ds-results/map-run2/` (not in the repo).
 
 ### 2026-11-19 · Essentials map run 1 · New 3DS · M4 (`tools/title --scene map`, native map renderer)
-- **Commits:** kit from rmxp3ds `d8d1e5a` and mkxp-z-3ds `510a9c66` (`feat/3ds-tilemap-renderer`
+- **Commits:** kit from rmxp3ds `e20f3f0` (`d8d1e5a` only recorded it in NOTES) and mkxp-z-3ds
+  `510a9c66` (`feat/3ds-tilemap-renderer`
   on top of fork PR 9), kit SHA-256 `1b959ffa…`; game: the Pokémon Essentials v21.1 demo, a
   local copy. Settings: RGSS1, Hires factor 0.625, `pathCache` false, frame rate 40 (the game's
   default), preload scripts `patches/essentials-v21/tilemap_renderer.rb` then the map probe.

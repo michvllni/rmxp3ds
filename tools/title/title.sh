@@ -10,8 +10,8 @@
 # DESCRIPTION
 #   Runs a local RPG Maker XP game (never part of this repository) in the 3DS runtime with a
 #   probe (an mkxp-z preloadScript) that reports on one scene. The game directory is copied as
-#   is; two files are added in the copy: mkxp.json (RGSS1, the game screen scaled to 3DS height,
-#   docs/DECISIONS.md D15, no path cache) and the probe. The game's own mkxp.json is replaced in
+#   is; added in the copy: mkxp.json (RGSS1, the game screen scaled to 3DS height,
+#   docs/DECISIONS.md D15, no path cache), the probe and any --patch scripts. The game's own mkxp.json is replaced in
 #   the copy only.
 #     --scene title  (M3 exit, docs/DECISIONS.md D16) tools/title/title_probe.rb reports when
 #                    the title screen is up: sdmc:/rmxp3ds/test/realtitle.txt, step log
@@ -23,7 +23,7 @@
 #     azahar  runs it in headless Azahar (tests/smoke/azahar-smoke.sh); passes when the probe
 #             reports. Frame rates from the emulator do not count.
 #     kit     writes the SD card layout to DIR/sd without any game file: sd/3ds/rmxp3ds/mkxp-z.3dsx
-#             and the two added files in sd/rmxp3ds/game. Copy the game's own folder contents to
+#             and the added files in sd/rmxp3ds/game. Copy the game's own folder contents to
 #             sdmc:/rmxp3ds/game first, then the kit on top (its mkxp.json replaces the game's).
 #
 # OPTIONS
@@ -71,7 +71,7 @@ PATCHES=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --game) GAME="$(realpath "${2:?--game needs a value}")"; shift 2 ;;
-    --patch) PATCHES+=("$(realpath "${2:?--patch needs a file}")"); shift 2 ;;
+    --patch) PATCHES+=("$(realpath -m "${2:?--patch needs a file}")"); shift 2 ;;
     --scene) SCENE="${2:?--scene needs a value}"; shift 2 ;;
     --height) HEIGHT="${2:?--height needs a value}"; shift 2 ;;
     --3dsx) APP="$(realpath -m "${2:?--3dsx needs a value}")"; shift 2 ;;
