@@ -9,8 +9,8 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   matches Azahar's (Measurements, Essentials title run attempt 5). The runtime is fork `dev`
   `29930935`. M4 started: map baseline tool, Ruby compiler crash fixed (fork Ruby patch 0006), native map
   renderer drawing Essentials maps (D17; M4 findings). Console map run 2: 31.3 FPS on Route 5,
-  39.9 FPS on Route 3, so the M4 frame rate is met (Measurements). Open: scroll seams (fixed,
-  console check pending), texture leak (fixed), merges.
+  39.9 FPS on Route 3, so the M4 frame rate is met (Measurements). Scroll seams fixed and confirmed on
+  the console (run 3), texture leak fixed. Open: merges.
 - **2026-11-18:** M3 in progress: SDL2 utility libraries for the 3DS (fork `3ds/deps`, test app
   `tools/sdlcheck`); mkxp-z runs on the 3DS with the citro3d renderer (D14, D15): engine, render
   (27 checks) and synthetic title screen checks pass in Azahar and on the New 3DS (hardware run
@@ -491,6 +491,14 @@ Console numbers only, with date, commits of both repos and settings.
   overflow (more than 15 moves to VRAM in one frame panic in libctru `gxqueue.c`), eviction
   copies not waited for, and empty scissor boxes covering the whole target; fixed in
   `5f8fabe6`. Attempt 3 follows.
+
+### 2026-11-19 · Essentials map run 3 · New 3DS · seam check (kit 3)
+- **Commits:** kit 3 (SHA-256 `f189ea99…`) from a local merge of mkxp-z-3ds `8d2d81cc` (fork
+  PR 11) and `fa2a44d4` (fork PR 12, the get_pixel texture leak fix); rmxp3ds `6c44188`.
+- **Result:** the maintainer confirmed that the black vertical lines while walking sideways are
+  gone (half-texel inset, fork PR 10).
+- The result files sent with it are byte-identical to run 2's, timestamps included, so they
+  are not a new measurement. Kit 3 changes nothing on the frame path; run 2's numbers stand.
 
 ### 2026-11-19 · Essentials map run 2 · New 3DS · M4 (native map renderer, faster gl3ds vertex path)
 - **Commits:** kit 2 from rmxp3ds `f32d273`, mkxp-z-3ds `eb546543` (`feat/3ds-frame-profile` on top
