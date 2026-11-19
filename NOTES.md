@@ -186,7 +186,11 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
     completely (snapshots checked by eye).
     - Route 5: 21.2 FPS (11.8 before), `Scene_Map#update` 32 ms (81 before).
     - Route 3: 28.1 FPS, update 23 ms.
-  - **Tile check** (`tests/runtime/tilecheck`, synthetic): 18 checks.
+  - **Tile check** (`tests/runtime/tilecheck`, synthetic): 26 checks after two reviews.
+  - **Console map run 1, prepared on 2026-11-19:** kit from rmxp3ds `e20f3f0` and fork `510a9c66`
+    (`feat/3ds-tilemap-renderer`, on top of fork PR 9). Kit SHA-256 `1b959ffa…`, built with
+    `title.sh kit --scene map --patch patches/essentials-v21/tilemap_renderer.rb`. The ELF is kept
+    in `build/map-kit/` for symbolizing crash dumps.
 - **Ruby compiler crash on the 3DS (fixed, fork https://github.com/michvllni/mkxp-z-3ds/pull/9):**
   - **Symptom:** a data abort or "Undefined Instruction" in `iseq_peephole_optimize` →
     `optimize_checktype` (a NULL `INSN`) while Essentials' scripts load. It is the same crash as
