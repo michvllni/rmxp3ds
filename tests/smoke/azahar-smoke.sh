@@ -4,7 +4,7 @@
 # SYNOPSIS
 #   tests/smoke/azahar-smoke.sh --3dsx FILE --result PATH --expect REGEX
 #                               [--timeout SEC] [--screenshot PNG] [--display :N] [--keep-home]
-#                               [--sd-file SRC=DEST]... [--sd-dir SRC=DEST]...
+#                               [--sd-file SRC=DEST]... [--sd-dir SRC=DEST]... [--gdb PORT]
 #
 # DESCRIPTION
 #   Runs a self-reporting .3dsx in headless Azahar (azahar-headless) and checks its result file.
@@ -27,6 +27,8 @@
 #   --display :N       X display (default: the first free one from :100; an existing X server on
 #                      the given display is reused and not stopped)
 #   --keep-home        keep the temporary HOME (Azahar logs, virtual SD) and print its path
+#   --gdb PORT         enable Azahar's GDB stub on PORT (connect arm-none-eabi-gdb with
+#                      `target remote localhost:PORT`; the app waits for the debugger)
 #   --sd-dir SRC=DEST  copy directory SRC (recursively) to DEST on the virtual SD card (DEST
 #                      relative to its root, e.g. rmxp3ds/game); --sd-file copies come after it,
 #                      so they can replace single files; repeatable
@@ -44,7 +46,7 @@ usage() {
 }
 
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
-FILE="" RESULT="" EXPECT="" TIMEOUT=120 SHOT="" KEEP=0
+FILE="" RESULT="" EXPECT="" TIMEOUT=120 SHOT="" KEEP=0 GDB_PORT=""
 SD_FILES=()
 SD_DIRS=()
 DISPLAY_NUM=""
@@ -57,6 +59,7 @@ while [ $# -gt 0 ]; do
     --screenshot) SHOT="${2:?--screenshot needs a value}"; shift 2 ;;
     --display) DISPLAY_NUM="${2:?--display needs a value}"; shift 2 ;;
     --keep-home) KEEP=1; shift ;;
+    --gdb) GDB_PORT="${2:?--gdb needs a port}"; shift 2 ;;
     --sd-file)
       case "${2:-}" in
         ?*=?*) SD_FILES+=("$2"); shift 2 ;;
@@ -149,6 +152,11 @@ done
 if [ -f "$REPO/.devcontainer/azahar/qt-config.ini" ]; then
   mkdir -p "$AZ_HOME/.config/azahar-emu"
   cp "$REPO/.devcontainer/azahar/qt-config.ini" "$AZ_HOME/.config/azahar-emu/"
+fi
+if [ -n "$GDB_PORT" ]; then
+  mkdir -p "$AZ_HOME/.config/azahar-emu"
+  printf '[Debugging]\nuse_gdbstub\\default=false\nuse_gdbstub=true\ngdbstub_port\\default=false\ngdbstub_port=%s\n' \
+    "$GDB_PORT" >>"$AZ_HOME/.config/azahar-emu/qt-config.ini"
 fi
 
 [ -n "$DISPLAY_NUM" ] || claim_display

@@ -192,9 +192,25 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
         https://bugs.ruby-lang.org/issues/19880).
     - Gone: with `compile.c` at `-O0`, or the GC disabled during script loading. Both could just
       be layout effects.
-  - **Next:** find where the label pointer is lost (label creation and `replace_destination` /
-    `unref_destination` in the peephole pass, 32-bit layout of `LABEL`/`INSN` in the compile data
-    arena). A NULL check in `optimize_checktype` avoids the crash, but it would hide a broken
+  - **The instruction matches `compile_next`'s `while` branch:** `label; putnil; adjust redo;
+    jump start_label`. So `ISEQ_COMPILE_DATA(iseq)->start_label` was NULL while `redo_label` was
+    set.
+  - **Further tests, none of which settles the cause:**
+    - With creation and per-peephole-step checks added, the bug no longer showed: code that
+      allocates nothing moved it.
+    - A synthetic `while`/`next` compile under `GC.stress` in Azahar: 21 rounds correct before
+      the timeout, so no sign that the GC frees an iseq while it compiles.
+    - Under Azahar's GDB stub (`tests/smoke/azahar-smoke.sh --gdb PORT`), with a conditional
+      breakpoint on `compile_next`, the same binary passed without a hit.
+    - With `compile.c` built using `-ftrivial-auto-var-init=zero` it passed. After restoring the
+      original `compile.o` and relinking, it also passed, as did six heap layouts (preload
+      padding from 0 to 800 strings).
+  - **Reading:** whether it happens depends on how the binary is linked, and on timing or
+    breakpoints, more than on the game scripts or heap layout. No crashing binary is kept, so
+    there is no repro right now.
+  - **Next:** keep every kit and test binary that crashes (ELF and `.3dsx`), then compare
+    candidate fixes (for example zero-initialized locals in `compile.c`) by crash rate over many
+    runs. A NULL check in `optimize_checktype` would avoid this crash site but hide a broken
     instruction list.
 
 ## M3 findings (2026-11-18)
