@@ -188,6 +188,22 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
     - Route 5: 21.2 FPS (11.8 before), `Scene_Map#update` 32 ms (81 before).
     - Route 3: 28.1 FPS, update 23 ms.
   - **Tile check** (`tests/runtime/tilecheck`, synthetic): 26 checks after two reviews.
+  - **Frame profile and vertex optimization (fork https://github.com/michvllni/mkxp-z-3ds/pull/11):**
+    - `RMXP3DSProfile.read` returns per-frame averages; the map probe logs them per map,
+      together with Essentials' `updateMaps`, `updateSpritesets` and the native tilemap update.
+    - **Azahar, Route 5, before the change:**
+      - `updateMaps` 5.4 ms, `updateSpritesets` 25.0 ms, of which the native tilemap is 1.0 ms
+        and the rest is Essentials' Ruby sprite updates.
+      - `composite` 14.6 ms, of which the gl3ds vertex transform was 13.4 ms, over about 13 draws
+        per frame. The scene traversal itself is negligible.
+      - Limiter, blit and present: under 1 ms.
+    - **Cause:** gl3ds looked up uniforms by name and attribute buffers in a map for every vertex,
+      and transformed shared quad vertices twice.
+    - **Fix:** resolved once per draw, and each distinct vertex transformed once. Vertex
+      transform 13.4 → 1.35 ms, `composite` 14.6 → 2.6 ms; Route 5 21.1 → 28.3 FPS, Route 3
+      26 → 38.1 FPS (emulator).
+    - **Consequence:** the render path is now about 3 ms, so a second core can save little.
+      Ruby's sprite updates (about 24 ms on Route 5) are the next target (PLAN §5).
   - **Console map run 1, prepared on 2026-11-19:** kit from rmxp3ds `e20f3f0` and fork `510a9c66`
     (`feat/3ds-tilemap-renderer`, on top of fork PR 9). Kit SHA-256 `1b959ffa…`, built with
     `title.sh kit --scene map --patch patches/essentials-v21/tilemap_renderer.rb`. The ELF is kept

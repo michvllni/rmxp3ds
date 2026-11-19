@@ -72,6 +72,8 @@ module RMXP3DSMapProbe
         @intervals = []
         @updates = []
         @gc0 = GC.count
+        @parts = Hash.new(0.0)
+        RMXP3DSProfile.read if defined?(RMXP3DSProfile) # reset the runtime's frame profile
       elsif n > SETTLE && n <= SETTLE + FRAMES
         @intervals << now - @last
       end
@@ -79,18 +81,38 @@ module RMXP3DSMapProbe
       a = System.uptime
       result = yield
       @updates << System.uptime - a if n > SETTLE && n <= SETTLE + FRAMES
+      @measuring = (n >= SETTLE && n < SETTLE + FRAMES) # parts: the next FRAMES updates
       finish_map(scene) if n == SETTLE + FRAMES
+      result
+    end
+
+    # Adds the time of a timed block to a part (only while measuring).
+    def part(name)
+      return yield unless @measuring
+
+      a = System.uptime
+      result = yield
+      @parts[name] += System.uptime - a
       result
     end
 
     def finish_map(scene)
       map_id = $game_map.map_id
       fps = @intervals.size / @intervals.sum
+      n = @intervals.size.to_f
+      split = @parts.map { |k, v| format('%s %.2f', k, v / n * 1000) }.join(', ')
+      if defined?(RMXP3DSProfile)
+        prof = RMXP3DSProfile.read
+        split += ' | present path ms/frame: ' +
+                 %w[composite gl_draw gl_xform gl_upload draws limiter blit present].map { |k| format('%s %.2f', k, prof[k]) }.join(', ')
+      end
       @lines ||= []
       @lines << format('map%d events=%d frames=%d fps=%.1f frame: %s | update: %s | gc_runs=%d',
                        map_id, $game_map.events.size, @intervals.size, fps, stats(@intervals),
                        stats(@updates), GC.count - @gc0)
       log(@lines.last)
+      log("  map#{map_id} ms/frame: #{split}")
+      @lines << "  map#{map_id} ms/frame: #{split}"
       snapshot(map_id)
       @plan.shift
       if @plan.empty?
@@ -114,9 +136,9 @@ module RMXP3DSMapProbe
     end
 
     def report
-      worst = @lines.map { |l| l[/fps=([\d.]+)/, 1].to_f }.min
+      worst = @lines.grep(/fps=/).map { |l| l[/fps=([\d.]+)/, 1].to_f }.min
       head = format('RMXP3DS_TEST realmap PASS maps=%d min_fps=%.1f frame_rate=%d',
-                    @lines.size, worst, Graphics.frame_rate)
+                    @lines.grep(/fps=/).size, worst, Graphics.frame_rate)
       log(head)
       File.write(RESULT, ([head] + @lines).join("\n") + "\n")
       @done = true
@@ -130,6 +152,8 @@ module RMXP3DSMapProbe
     def main(*_args)
       RMXP3DSMapProbe.log('Scene_Intro#main: new game instead of the title')
       Scene_Map.prepend(SceneHook)
+      # the native map renderer's per-frame work, if the rmxp3ds patch is loaded
+      RMXP3DS::EssentialsTilemap.prepend(TilemapHook) if defined?(RMXP3DS::EssentialsTilemap)
       Input.singleton_class.prepend(InputHook)
       Game.start_new # sets $scene to a new Scene_Map
       $DEBUG = true # Essentials' debug walk with CTRL (see InputHook)
@@ -145,7 +169,21 @@ module RMXP3DSMapProbe
     TRACE.disable
   end
 
+  module TilemapHook
+    def update(*args)
+      RMXP3DSMapProbe.part('tilemap(in updateSpritesets)') { super }
+    end
+  end
+
   module SceneHook
+    def updateMaps(*args)
+      RMXP3DSMapProbe.part('updateMaps') { super }
+    end
+
+    def updateSpritesets(*args)
+      RMXP3DSMapProbe.part('updateSpritesets') { super }
+    end
+
     def update(*args)
       return super if RMXP3DSMapProbe.done?
 
