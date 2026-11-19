@@ -4,6 +4,10 @@
 Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` from PLAN §10.
 
 ## Status
+- **2026-11-19:** M3 exit reached (D16): Pokémon Essentials v21.1 (local copy) reaches its title
+  screen on the New 3DS. The title opens 19.9 s after start and runs at 40.0 FPS; the snapshot
+  matches Azahar's (Measurements, Essentials title run attempt 5). Open: merge the fork PRs and
+  bump `runtime/` to fork `dev`. Next: M4.
 - **2026-11-18:** M3 in progress: SDL2 utility libraries for the 3DS (fork `3ds/deps`, test app
   `tools/sdlcheck`); mkxp-z runs on the 3DS with the citro3d renderer (D14, D15): engine, render
   (27 checks) and synthetic title screen checks pass in Azahar and on the New 3DS (hardware run
@@ -386,6 +390,22 @@ Console numbers only, with date, commits of both repos and settings.
   overflow (more than 15 moves to VRAM in one frame panic in libctru `gxqueue.c`), eviction
   copies not waited for, and empty scissor boxes covering the whole target; fixed in
   `5f8fabe6`. Attempt 3 follows.
+
+### 2026-11-19 · Essentials title run, attempt 5 · New 3DS · M3 exit (`tools/title`) · PASS
+- **Commits:** rmxp3ds `75503ef` (kit 4, SHA-256 02caae71), mkxp-z-3ds `43e7ae75`
+  (`feat/3ds-gl-effects`, which includes fork PRs #7 and #8); game: Pokémon Essentials v21.1, a
+  full local copy on the SD card (never in the repo). Settings (`tools/title` mkxp.json): RGSS1,
+  Hires factor 0.625 (512×384 → 320×240), texture factor 1.0, `pathCache` false, title probe as
+  the preload script.
+- **Result:** `RMXP3DS_TEST realtitle PASS title_after=19.9s title_fps=40.0 frames=240`. Probe
+  log: `IntroEventScene` hooked at 6.75 s, splashes at 13.6 s and 16.5 s, title at 19.92 s. The
+  snapshot (`Graphics.snap_to_bitmap`, 512×384) shows the full title screen and matches the one
+  from Azahar. Ruby sees all 6456 files in `Graphics/`.
+- **Earlier attempts** (M3 findings, Essentials title screen): 1 crashed reading the game's own
+  `mkxp.json` (fork #8); 2 and 3 had an incomplete copy on the SD card; 4 took minutes in the path
+  cache and then crashed in Ruby's compiler (`3ds-results/title-attempt4/`, not reproduced since
+  the path cache is off).
+- Local logs: `3ds-results/kit-4/` (not in the repo).
 
 ### 2026-11-18 · Hardware run 3, attempt 4 · New 3DS · M3 checks (`tools/hw3`) · PASS
 - **Commits:** rmxp3ds `4eafc0a`, mkxp-z-3ds `0c370c89` (`feat/3ds-gl-effects`, code of
