@@ -7,8 +7,8 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 - **2026-11-19:** M3 exit reached (D16): Pokémon Essentials v21.1 (local copy) reaches its title
   screen on the New 3DS. The title opens 19.9 s after start and runs at 40.0 FPS; the snapshot
   matches Azahar's (Measurements, Essentials title run attempt 5). The runtime is fork `dev`
-  `29930935`. M4 started: map baseline tool, Ruby compiler crash fixed (fork Ruby patch 0006), tilemap
-  textures next (M4 findings).
+  `29930935`. M4 started: map baseline tool, Ruby compiler crash fixed (fork Ruby patch 0006), native map
+  renderer drawing Essentials maps (D17; M4 findings). Next: console run, dual-core.
 - **2026-11-18:** M3 in progress: SDL2 utility libraries for the 3DS (fork `3ds/deps`, test app
   `tools/sdlcheck`); mkxp-z runs on the 3DS with the citro3d renderer (D14, D15): engine, render
   (27 checks) and synthetic title screen checks pass in Azahar and on the New 3DS (hardware run
@@ -162,12 +162,31 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   - Azahar (emulator, not a performance number): 11.8 and 12.2 FPS. The frame time is almost all
     in `Scene_Map#update`: Ruby logic, plus Essentials' sprite and tilemap updates with their
     bitmap drawing.
-- **Map not drawn yet:** Essentials' Ruby `TilemapRenderer` draws through bitmaps taller than
-  1024 px (log: 1024×4096, 256×1536, 160×1536), which gl3ds does not support. The snapshot shows
-  only the player sprite on black. The `Outside` tileset is 256×16064 (15.7 MiB as RGBA).
-  - Without the GC (`GC.disable` during script loading, to get past the crash below), loading it
-    failed with "Out of memory".
-  - Next: textures above 1024 px or a native tilemap, and tileset splitting (PLAN §3.2).
+- **Native map renderer (D17, fork https://github.com/michvllni/mkxp-z-3ds/pull/10):**
+  - **Why:** Essentials' Ruby `TilemapRenderer` draws through bitmaps taller than 1024 px (log:
+    1024×4096, 256×1536, 160×1536). gl3ds could not use those, so only the player was drawn, on
+    black. The `Outside` tileset is 256×16064 (15.7 MiB as RGBA).
+  - **What replaces it:**
+    - The fork's `RMXP3DSTileRenderer`.
+    - The patch `patches/essentials-v21/tilemap_renderer.rb`: a preload script that redirects
+      `TilemapRenderer.new` and keeps Essentials' interface.
+    - A behavioural spec of Essentials' renderer, written in our own words, kept local.
+  - **Memory, first attempt:** uploading every tileset tile and autotile frame up front ran
+    out of linear memory ("out of linear memory for textures"), and Route 3 was half black.
+  - **Memory, second attempt:** keeping a CPU copy of each source failed on the second
+    `Outside`. The heap was about 75–83 MB with about 66 MB in use (`mallinfo`), so the extra
+    15.7 MB raised `bad_alloc`, and the app ended without a message.
+  - **Memory, now:** atlas slots are filled on first use. Tall tilesets are loaded uncached
+    (`Bitmap.new`) and read in place from the mega surface, kept alive until removed; small
+    images are copied.
+  - **gl3ds now reports `GL_MAX_TEXTURE_SIZE` 1024.** mkxp-z's RGSS Tilemap therefore refuses
+    tilesets taller than about 1300 px; the engine check tests that a 1024 px tileset is
+    accepted and a 4096 px one refused.
+  - **Azahar (emulator, not performance numbers):** with the patch, Route 5 and Route 3 draw
+    completely (snapshots checked by eye).
+    - Route 5: 21.2 FPS (11.8 before), `Scene_Map#update` 32 ms (81 before).
+    - Route 3: 28.1 FPS, update 23 ms.
+  - **Tile check** (`tests/runtime/tilecheck`, synthetic): 18 checks.
 - **Ruby compiler crash on the 3DS (fixed, fork https://github.com/michvllni/mkxp-z-3ds/pull/9):**
   - **Symptom:** a data abort or "Undefined Instruction" in `iseq_peephole_optimize` →
     `optimize_checktype` (a NULL `INSN`) while Essentials' scripts load. It is the same crash as

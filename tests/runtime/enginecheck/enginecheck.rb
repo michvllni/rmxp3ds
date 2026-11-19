@@ -60,8 +60,17 @@ begin
   check.call('sprite', sp.x == 10 && sp.zoom_x == 2.0 && sp.opacity == 128 && sp.viewport == vp)
   w = Window.new; w.x = 4; w.width = 100; w.height = 64; w.contents = Bitmap.new(68, 32)
   check.call('window', w.width == 100 && w.contents.width == 68)
-  tm = Tilemap.new(vp); tm.tileset = Bitmap.new(256, 4096); tm.map_data = Table.new(20, 15, 3)
-  check.call('tilemap_big_tileset', tm.tileset.height == 4096)
+  # textures are at most 1024 px (PICA200): mkxp-z's RGSS Tilemap takes tilesets up to about
+  # 1300 px tall (atlas lanes) and refuses taller ones; the converter splits those (PLAN 3.2)
+  tm = Tilemap.new(vp); tm.tileset = Bitmap.new(256, 1024); tm.map_data = Table.new(20, 15, 3)
+  check.call('tilemap_tileset_1024', tm.tileset.height == 1024)
+  tall = begin
+    tm.tileset = Bitmap.new(256, 4096)
+    'accepted'
+  rescue MKXPError, StandardError => e # MKXPError is not a StandardError
+    e.message
+  end
+  check.call('tilemap_tall_tileset_refused', tall.include?('tileset atlas'), tall)
   tm.dispose
   # movies are left out on the 3DS: play_movie logs and returns, even for a missing file
   movie = begin

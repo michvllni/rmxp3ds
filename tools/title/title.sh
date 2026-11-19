@@ -2,9 +2,10 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # SYNOPSIS
-#   tools/title/title.sh azahar --game DIR [--scene title|map] [--height PX] [--3dsx FILE]
-#                               [--timeout SEC] [--screenshot PNG] [--keep-home]
-#   tools/title/title.sh kit    --out DIR [--scene title|map] [--height PX] [--3dsx FILE]
+#   tools/title/title.sh azahar --game DIR [--scene title|map] [--patch FILE]... [--height PX]
+#                               [--3dsx FILE] [--timeout SEC] [--screenshot PNG] [--keep-home]
+#   tools/title/title.sh kit    --out DIR [--scene title|map] [--patch FILE]... [--height PX]
+#                               [--3dsx FILE]
 #
 # DESCRIPTION
 #   Runs a local RPG Maker XP game (never part of this repository) in the 3DS runtime with a
@@ -28,6 +29,8 @@
 # OPTIONS
 #   --game DIR        azahar: game directory (Game.ini, Data/, Graphics/ ...)
 #   --scene NAME      title (default) or map
+#   --patch FILE      rmxp3ds patch script run as a preload script before the probe, in the
+#                     given order (e.g. patches/essentials-v21/tilemap_renderer.rb, D17)
 #   --height PX       height of the game's screen in pixels (default 480; Pokémon Essentials: 384,
 #                     it calls Graphics.resize_screen(512, 384)); the scaling factor is 240/PX
 #   --3dsx FILE       runtime app (default: runtime/build-3ds/mkxp/mkxp-z.3dsx)
@@ -40,7 +43,8 @@
 # EXAMPLE
 #   tools/title/title.sh azahar --game ~/volume/games/essentials --height 384
 #   tools/title/title.sh kit --height 384 --out build/title-kit
-#   tools/title/title.sh azahar --game ~/volume/games/essentials --height 384 --scene map
+#   tools/title/title.sh azahar --game ~/volume/games/essentials --height 384 --scene map \
+#     --patch patches/essentials-v21/tilemap_renderer.rb
 set -euo pipefail
 
 usage() {
@@ -63,9 +67,11 @@ TIMEOUT=600
 SCENE=title
 SHOT=""
 KEEP=()
+PATCHES=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --game) GAME="$(realpath "${2:?--game needs a value}")"; shift 2 ;;
+    --patch) PATCHES+=("$(realpath "${2:?--patch needs a file}")"); shift 2 ;;
     --scene) SCENE="${2:?--scene needs a value}"; shift 2 ;;
     --height) HEIGHT="${2:?--height needs a value}"; shift 2 ;;
     --3dsx) APP="$(realpath -m "${2:?--3dsx needs a value}")"; shift 2 ;;
@@ -88,6 +94,14 @@ case "$OUT" in "$REPO"/build|"$REPO"/build/*|"") ;; "$REPO"|"$REPO"/*) echo "tit
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+# patches: copied as rmxp3ds_patch_<n>.rb, run before the probe in the given order
+PRELOADS=""
+PATCH_FILES=()
+for i in "${!PATCHES[@]}"; do
+  [ -f "${PATCHES[$i]}" ] || { echo "title.sh: patch not found: ${PATCHES[$i]}" >&2; exit 2; }
+  PRELOADS="$PRELOADS\"rmxp3ds_patch_$i.rb\", "
+  PATCH_FILES+=("${PATCHES[$i]}=rmxp3ds/game/rmxp3ds_patch_$i.rb")
+done
 FACTOR="$(awk -v h="$HEIGHT" 'BEGIN { printf "%.6f", 240 / h }')"
 cat > "$WORK/mkxp.json" <<JSON
 // mkxp-z-3ds config written by rmxp3ds tools/title/title.sh (replaces the game's own in this copy)
@@ -100,17 +114,20 @@ cat > "$WORK/mkxp.json" <<JSON
   // no path cache: the 3DS SD card (FAT) already matches names without case, and listing all
   // of Essentials' 7606 files took minutes at start (NOTES.md M3, console attempt 4)
   "pathCache": false,
-  "preloadScript": ["rmxp3ds_probe.rb"]
+  "preloadScript": [$PRELOADS"rmxp3ds_probe.rb"]
 }
 JSON
 
 case "$MODE" in
   azahar)
     mkdir -p "$(dirname "$SHOT")"
+    PATCH_ARGS=()
+    for spec in "${PATCH_FILES[@]}"; do PATCH_ARGS+=(--sd-file "$spec"); done
     "$REPO/tests/smoke/azahar-smoke.sh" --3dsx "$APP" --result "rmxp3ds/test/real$SCENE.txt" \
       --expect "^RMXP3DS_TEST real$SCENE PASS" --sd-dir "$GAME=rmxp3ds/game" \
       --sd-file "$WORK/mkxp.json=rmxp3ds/game/mkxp.json" \
       --sd-file "$PROBE=rmxp3ds/game/rmxp3ds_probe.rb" \
+      "${PATCH_ARGS[@]}" \
       --timeout "$TIMEOUT" --screenshot "$SHOT" "${KEEP[@]}"
     ;;
   kit)
@@ -119,6 +136,7 @@ case "$MODE" in
     cp "$APP" "$OUT/sd/3ds/rmxp3ds/mkxp-z.3dsx"
     cp "$WORK/mkxp.json" "$OUT/sd/rmxp3ds/game/mkxp.json"
     cp "$PROBE" "$OUT/sd/rmxp3ds/game/rmxp3ds_probe.rb"
+    for spec in "${PATCH_FILES[@]}"; do cp "${spec%=*}" "$OUT/sd/${spec##*=}"; done
     echo "kit: $OUT/sd (no game files: copy the game's folder to sdmc:/rmxp3ds/game first, then the kit)"
     ;;
 esac
