@@ -22,7 +22,7 @@ runtime/         submodule: mkxp-z-3ds
 convert/         converter (Ruby)                      — from M5
 tools/           setup-workspace.sh, bench/ (Ruby test app), m2/ (headless game harness, M2),
                  sdlcheck/ (SDL2 utility libraries test app, M3), hw3/ (hardware run 3 kit, M3),
-                 title/ (real game to its title screen, M3 exit)
+                 title/ (real game: title screen, M3 exit; map walk, M4 baseline)
 tests/           fixtures (synthetic only), golden images
 docs/            PLAN.md, DECISIONS.md
 ```
@@ -58,6 +58,7 @@ docs/            PLAN.md, DECISIONS.md
 | Runtime title check in Azahar | `ruby tests/runtime/titlecheck/make-assets.rb --out-dir build/titlecheck`, then as the engine check with `tests/runtime/titlecheck/{mkxp.json,titlecheck.rb}` plus `--sd-file build/titlecheck/title.png=rmxp3ds/game/Graphics/Titles/title.png --sd-file build/titlecheck/windowskin.png=rmxp3ds/game/Graphics/Windowskins/windowskin.png`, `--result rmxp3ds/test/title.txt --expect '^RMXP3DS_TEST title PASS' --screenshot build/title-smoke.png` (synthetic title scene: title image, command window, cursor, fades) |
 | Hardware run 3 (M3) | `tools/hw3/hw3.sh azahar` validates the kit in Azahar; `tools/hw3/hw3.sh kit --out build/hw3` writes the SD layout (engine, render, title checks, frame times, HOME/sleep window; results in `sdmc:/rmxp3ds/test/hw3.txt`) |
 | Real game to its title screen (M3 exit, D16) | `tools/title/title.sh azahar --game DIR --height 384` (Essentials: 512×384) runs a local game copy in Azahar until the preload probe reports the title (`realtitle.txt`, step log `realtitle-log.txt`); `tools/title/title.sh kit --height 384 --out build/title-kit` writes a console kit without game files |
+| Real game walking on maps (M4 baseline) | `tools/title/title.sh azahar --game DIR --height 384 --scene map` starts a new Essentials v21 game instead of the title and walks the player around Route 5 and Route 3 (debug walk, scripted input), measuring frame times (`realmap.txt`, step log `realmap-log.txt`, snapshots `realmap-<map>.png`, which stay local); `kit --scene map` for the console |
 | SDL2 libraries test app | `cmake -S tools/sdlcheck -B build/sdlcheck -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake" && cmake --build build/sdlcheck`; in Azahar: `tests/smoke/azahar-smoke.sh --3dsx build/sdlcheck/sdlcheck.3dsx --result rmxp3ds/test/sdlcheck.txt --expect '^RMXP3DS_TEST sdlcheck PASS' --timeout 300` |
 | Ruby test/bench app | `cmake -S tools/bench -B build/bench -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake" && cmake --build build/bench` |
 | Ruby test in Azahar | `tests/smoke/azahar-smoke.sh --3dsx build/bench/bench.3dsx --result rmxp3ds/test/rubybench.txt --expect '^RMXP3DS_TEST rubybench PASS' --timeout 600` (add `--sd-file SRC=rmxp3ds/test/NAME` to run scripts/fixtures from SD) |

@@ -7,7 +7,8 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 - **2026-11-19:** M3 exit reached (D16): Pokémon Essentials v21.1 (local copy) reaches its title
   screen on the New 3DS. The title opens 19.9 s after start and runs at 40.0 FPS; the snapshot
   matches Azahar's (Measurements, Essentials title run attempt 5). The runtime is fork `dev`
-  `29930935`. Next: M4.
+  `29930935`. M4 started: map baseline tool, open Ruby compiler crash, tilemap textures (M4
+  findings).
 - **2026-11-18:** M3 in progress: SDL2 utility libraries for the 3DS (fork `3ds/deps`, test app
   `tools/sdlcheck`); mkxp-z runs on the 3DS with the citro3d renderer (D14, D15): engine, render
   (27 checks) and synthetic title screen checks pass in Azahar and on the New 3DS (hardware run
@@ -149,6 +150,52 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 - **Emulator timings are not performance numbers.** For the record (Azahar 2126.2, 100 % clock,
   JIT): while_loop_1M 670 ms, method_call_300k 1028 ms, object_alloc_200k 1637 ms,
   marshal_load_fixture 90 ms.
+
+## M4 findings (2026-11-19, in progress)
+- **Baseline tool:** `tools/title/title.sh --scene map` with `tools/title/map_probe.rb`.
+  - The probe replaces Essentials' `Scene_Intro#main` (hooked through a `TracePoint(:end)`) with
+    `Game.start_new`.
+  - It walks a square on Route 5 (map 41, 96 events) and Route 3 (map 31, 30 events), using
+    Essentials' debug walk with scripted input.
+  - Per map, it measures 600 frames of frame interval and `Scene_Map#update` time, then saves a
+    snapshot.
+  - Azahar (emulator, not a performance number): 11.8 and 12.2 FPS. The frame time is almost all
+    in `Scene_Map#update`: Ruby logic, plus Essentials' sprite and tilemap updates with their
+    bitmap drawing.
+- **Map not drawn yet:** Essentials' Ruby `TilemapRenderer` draws through bitmaps taller than
+  1024 px (log: 1024×4096, 256×1536, 160×1536), which gl3ds does not support. The snapshot shows
+  only the player sprite on black. The `Outside` tileset is 256×16064 (15.7 MiB as RGBA).
+  - Without the GC (`GC.disable` during script loading, to get past the crash below), loading it
+    failed with "Out of memory".
+  - Next: textures above 1024 px or a native tilemap, and tileset splitting (PLAN §3.2).
+- **Ruby compiler crash on the 3DS (open):**
+  - **Symptom:** a data abort or "Undefined Instruction" in `iseq_peephole_optimize` →
+    `optimize_checktype` (`compile.c:2839`/`2847` of 3.1.3, a NULL `INSN`) while Essentials'
+    scripts load. It is the same crash as Essentials title run attempt 4 on the console.
+  - **When it happens:** deterministic for a given probe and build, but which probe triggers it
+    depends on the preload code and the heap layout.
+    - Crashes: an earlier map probe (`Object.prepend` at preload) and the Scene_Intro version
+      without a TracePoint.
+    - Passes: the title probe, the plain game, and any run with a `script_compiled` TracePoint
+      active.
+  - **Debugging (a CRuby build with `-g`, instrumented `compile.c`):**
+    - In `087:DrawText` line 165 (a `next` in a `while` loop), the list holds `putnil, adjust,
+      jump <label NULL>, adjust, jump`: a jump whose label operand is NULL.
+    - The host (x86-64 CRuby 3.1.3, same scripts) is fine, even with `GC.stress` and
+      `MALLOC_PERTURB_`.
+  - **Variations tried on the 3DS:**
+    - Still occurs:
+      - with a 4 MiB RGSS stack (not a stack overflow);
+      - without the transient heap (`-DUSE_TRANSIENT_HEAP=0`);
+      - with `-fno-strict-aliasing`;
+      - with upstream fix e031eff343 (missing write barrier for iseq operands,
+        https://bugs.ruby-lang.org/issues/19880).
+    - Gone: with `compile.c` at `-O0`, or the GC disabled during script loading. Both could just
+      be layout effects.
+  - **Next:** find where the label pointer is lost (label creation and `replace_destination` /
+    `unref_destination` in the peephole pass, 32-bit layout of `LABEL`/`INSN` in the compile data
+    arena). A NULL check in `optimize_checktype` avoids the crash, but it would hide a broken
+    instruction list.
 
 ## M3 findings (2026-11-18)
 - **Renderer architecture (D14):**
