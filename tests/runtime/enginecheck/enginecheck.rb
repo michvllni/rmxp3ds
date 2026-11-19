@@ -18,6 +18,14 @@ end
 begin
   zl = begin; require 'zlib'; 'loaded'; rescue Exception => e; "#{e.class}: #{e.message}"; end
   check.call('zlib', defined?(Zlib) && Zlib::Inflate.inflate(Zlib::Deflate.deflate('abc')) == 'abc', "#{zl}; features=#{$LOADED_FEATURES.grep(/zlib/).inspect}")
+  # encoding table linked (enc/encinit.a before libruby-static.a): constants and a transcoder
+  enc_ok = begin
+    Encoding.const_defined?(:UTF_8) && Encoding.name_list.size > 50 &&
+      "caf\u00e9".encode('ISO-8859-1').bytesize == 4
+  rescue Exception => e
+    "#{e.class}: #{e.message}"
+  end
+  check.call('encodings', enc_ok == true, "#{Encoding.name_list.size} names; #{enc_ok}")
   t = Table.new(4, 3, 2); t[3, 2, 1] = 77
   check.call('table', t[3, 2, 1] == 77 && t.xsize == 4)
   c = Color.new(10, 20, 30, 40); tone = Tone.new(-10, 0, 10, 50); r = Rect.new(1, 2, 3, 4)

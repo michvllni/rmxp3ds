@@ -21,7 +21,8 @@ Status, findings, measurements, sources: [NOTES.md](NOTES.md).
 runtime/         submodule: mkxp-z-3ds
 convert/         converter (Ruby)                      — from M5
 tools/           setup-workspace.sh, bench/ (Ruby test app), m2/ (headless game harness, M2),
-                 sdlcheck/ (SDL2 utility libraries test app, M3), hw3/ (hardware run 3 kit, M3)
+                 sdlcheck/ (SDL2 utility libraries test app, M3), hw3/ (hardware run 3 kit, M3),
+                 title/ (real game to its title screen, M3 exit)
 tests/           fixtures (synthetic only), golden images
 docs/            PLAN.md, DECISIONS.md
 ```
@@ -48,7 +49,7 @@ docs/            PLAN.md, DECISIONS.md
 |---|---|
 | Workspace toolchain | `tools/setup-workspace.sh && . ~/volume/.toolchain/env.sh` |
 | Build hello-world | `cmake -S tools/hello -B build/hello -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake" && cmake --build build/hello` |
-| Emulator smoke test | `tests/smoke/azahar-smoke.sh --3dsx build/hello/hello.3dsx --result rmxp3ds/test/hello.txt --expect '^RMXP3DS_TEST hello PASS' --screenshot build/hello-smoke.png` |
+| Emulator smoke test | `tests/smoke/azahar-smoke.sh --3dsx build/hello/hello.3dsx --result rmxp3ds/test/hello.txt --expect '^RMXP3DS_TEST hello PASS' --screenshot build/hello-smoke.png` (`--sd-file SRC=DEST` / `--sd-dir SRC=DEST` put files or directories on the virtual SD) |
 | CRuby for 3DS (fork) | `runtime/3ds/ruby/build.sh --jobs "$MEMGUARD_CPUS"` (via `memguard --`) → `runtime/build-3ds/ruby/` |
 | SDL2 libraries for 3DS (fork) | `runtime/3ds/deps/build.sh --jobs "$MEMGUARD_CPUS"` (via `memguard --`) → `runtime/build-3ds/deps/prefix/` |
 | Runtime (mkxp-z for 3DS, fork) | after the CRuby and deps builds: `cmake -S runtime/3ds -B runtime/build-3ds/mkxp -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake" && cmake --build runtime/build-3ds/mkxp` → `mkxp-z.3dsx` (see `runtime/3ds/README.md`) |
@@ -56,6 +57,7 @@ docs/            PLAN.md, DECISIONS.md
 | Runtime render check in Azahar | `ruby tests/runtime/rendercheck/make-transmap.rb --out build/trans-map.png`, then as the engine check with `tests/runtime/rendercheck/{mkxp.json,rendercheck.rb}` plus `--sd-file build/trans-map.png=rmxp3ds/game/trans-map.png`, `--result rmxp3ds/test/render.txt --expect '^RMXP3DS_TEST render PASS' --screenshot build/render.png` (Bitmap ops, blt, VRAM pressure, effects, transitions; final scene: quadrants red top left, green top right, blue bottom left, white bottom right) |
 | Runtime title check in Azahar | `ruby tests/runtime/titlecheck/make-assets.rb --out-dir build/titlecheck`, then as the engine check with `tests/runtime/titlecheck/{mkxp.json,titlecheck.rb}` plus `--sd-file build/titlecheck/title.png=rmxp3ds/game/Graphics/Titles/title.png --sd-file build/titlecheck/windowskin.png=rmxp3ds/game/Graphics/Windowskins/windowskin.png`, `--result rmxp3ds/test/title.txt --expect '^RMXP3DS_TEST title PASS' --screenshot build/title.png` (synthetic title scene: title image, command window, cursor, fades) |
 | Hardware run 3 (M3) | `tools/hw3/hw3.sh azahar` validates the kit in Azahar; `tools/hw3/hw3.sh kit --out build/hw3` writes the SD layout (engine, render, title checks, frame times, HOME/sleep window; results in `sdmc:/rmxp3ds/test/hw3.txt`) |
+| Real game to its title screen (M3 exit, D16) | `tools/title/title.sh azahar --game DIR --height 384` (Essentials: 512×384) runs a local game copy in Azahar until the preload probe reports the title (`realtitle.txt`, step log `realtitle-log.txt`); `tools/title/title.sh kit --height 384 --out build/title-kit` writes a console kit without game files |
 | SDL2 libraries test app | `cmake -S tools/sdlcheck -B build/sdlcheck -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake" && cmake --build build/sdlcheck`; in Azahar: `tests/smoke/azahar-smoke.sh --3dsx build/sdlcheck/sdlcheck.3dsx --result rmxp3ds/test/sdlcheck.txt --expect '^RMXP3DS_TEST sdlcheck PASS' --timeout 300` |
 | Ruby test/bench app | `cmake -S tools/bench -B build/bench -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake" && cmake --build build/bench` |
 | Ruby test in Azahar | `tests/smoke/azahar-smoke.sh --3dsx build/bench/bench.3dsx --result rmxp3ds/test/rubybench.txt --expect '^RMXP3DS_TEST rubybench PASS' --timeout 600` (add `--sd-file SRC=rmxp3ds/test/NAME` to run scripts/fixtures from SD) |
