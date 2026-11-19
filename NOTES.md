@@ -4,6 +4,9 @@
 Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` from PLAN §10.
 
 ## Status
+- **2026-11-19:** M5 started: converter v1 (`convert/rmxp3ds-convert`) packages a game for
+  `sdmc:/rmxp3ds/games/<id>/`; the runtime lists those games (fork game picker). The converted
+  Essentials demo reaches its title in Azahar (M5 findings). Open: the console run.
 - **2026-11-19:** M3 exit reached (D16): Pokémon Essentials v21.1 (local copy) reaches its title
   screen on the New 3DS. The title opens 19.9 s after start and runs at 40.0 FPS; the snapshot
   matches Azahar's (Measurements, Essentials title run attempt 5). The runtime is fork `dev`
@@ -154,6 +157,53 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 - **Emulator timings are not performance numbers.** For the record (Azahar 2126.2, 100 % clock,
   JIT): while_loop_1M 670 ms, method_call_300k 1028 ms, object_alloc_200k 1637 ms,
   marshal_load_fixture 90 ms.
+
+## M5 findings (2026-11-19, in progress)
+- **Converter v1:** `convert/rmxp3ds-convert` (Ruby, host Ruby 3.1.3 like the runtime, no gems).
+  - **Output:** `OUT/rmxp3ds/games/<id>/`. The plan's `sdmc:/3ds/xp3ds/games/<id>/` predates the
+    project name; `3ds/` holds apps, so games sit next to the existing `sdmc:/rmxp3ds/` files. The
+    runtime gets a game picker for this directory (fork https://github.com/michvllni/mkxp-z-3ds/pull/13).
+  - **What it does:**
+    - Reads Game.ini and the scripts (Data/Scripts.rxdata, plus Essentials' PluginScripts.rxdata).
+    - Detects the profile: Essentials v21 is found by `module Essentials … VERSION = "21.` and
+      its size by `SCREEN_WIDTH`/`SCREEN_HEIGHT`; otherwise RPG Maker XP at 640×480.
+    - Copies the game without PC-only files: `*.exe`, `*.dll`, shortcuts, `Game.rxproj`, the
+      game's `mkxp.json`, MIDI soundfonts (no MIDI yet, M6) and OS litter. A second run copies only
+      changed files.
+    - Writes `mkxp.json`: factor 240/height (D15), no path cache.
+    - Installs `patches/<profile>/*.rb` as preload scripts. Rewriting Scripts.rxdata is not needed:
+      the patches hook classes by name when they are defined.
+  - **Validation report:**
+    - File names FAT32 cannot hold (error: nothing is written).
+    - Graphics and audio named by the database, maps, event commands and move routes but missing
+      from the game.
+    - Images over 1024 px.
+    - Win32API/DLL and Fiddle use.
+  - **Loading data without RGSS:** the data is read with a Marshal loader that creates the classes it
+    names as empty classes (Table decoded, other `_dump` types kept as bytes), so a game's own
+    classes in its data do not stop the scan.
+- **Essentials v21.1 (local copy):**
+  - The scan takes 0.4 s. It covers 7596 files (56.7 MiB); 10 files (27.5 MiB) are left out:
+    the exes, DLLs, the soundfont and others.
+  - Nothing is named by the data but missing, except one sound effect that Essentials itself
+    lacks.
+  - 13 images are over 1024 px: 9 tilesets up to 256×16064, 2 animations, 1 transition and 1 UI
+    sheet.
+  - The package reaches the title screen in Azahar from `sdmc:/rmxp3ds/games/essentials/` (picker
+    build, title probe as `--preload`).
+- **Not done, on purpose:**
+  - Splitting tall tilesets: not needed. The native renderer (D17) reads them in place, and
+    splitting saves no memory.
+  - Downscaling assets: not needed. The runtime scales the screen (D15).
+  - Audio conversion: M6.
+  - ISeq precompilation: measure first; the title takes about 20 s on the console, and parsing is
+    part of that.
+- **Tests:**
+  - `tests/convert/convert_test.rb`: host tests with synthetic games from
+    `tests/fixtures/make-rmxp-game.rb`.
+  - CI boots a converted synthetic game from `sdmc:/rmxp3ds/games/` in Azahar (9 checks in its
+    own `Main` section: started from the games directory, patch set preloaded, `mkxp.json`, PC
+    files left out, picture, map and tileset data, frames).
 
 ## M4 findings (2026-11-19)
 - **Baseline tool:** `tools/title/title.sh --scene map` with `tools/title/map_probe.rb`.
@@ -447,6 +497,7 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
     drawing takes about 3 ms of a 32 ms frame (console map run 3). The rest is Ruby, mostly
     Essentials' sprite updates, so native sprite updates come first (§5).
   - Single frames of about 300 ms on Route 5 (map setup, GC) are not investigated yet.
+  - ISeq precompilation in the converter (M5 findings).
 - **Later:** Ruby thread preemption (timer without pipes); guard page + exception handler for deep C
   recursion.
 - **Backlog, upstream mkxp-z (on hold, maintainer decision 2026-11-18: no upstream traction for now):**
