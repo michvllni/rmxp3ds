@@ -51,7 +51,9 @@ module RMXP3DS
     def refresh; end # the native renderer rebuilds every frame
 
     def update
-      return if @disposed
+      return if @disposed || @native.disposed? # Graphics.reset disposes the native side
+
+      release_unused
 
       maps = $map_factory ? $map_factory.maps : [$game_map]
       inputs = maps.compact.map { |map| map_input(map) }
@@ -65,7 +67,7 @@ module RMXP3DS
     def dispose
       return if @disposed
 
-      @native.dispose
+      @native.dispose if !@native.disposed?
       @sources.each_value { |entry| entry[2]&.dispose }
       @sources.clear
       @disposed = true
@@ -87,31 +89,51 @@ module RMXP3DS
 
       key = [kind, name]
       if (entry = @sources[key])
-        entry[1] += 1
+        entry[1] += 1 # also revives an entry waiting for release_unused (map transfers)
         return
       end
-      # Tilesets are loaded uncached: a tall one is a CPU "mega" bitmap (above 1024 px) that the
-      # native renderer reads in place, so it must stay alive until remove_source. Smaller images
-      # are copied by the native side and disposed at once (RPG::Cache reloads disposed bitmaps).
-      bitmap = (kind == :tileset) ? Bitmap.new("Graphics/Tilesets/" + name) : pbGetAutotile(name)
+      bitmap, own = load_bitmap(kind, name)
       seconds = AUTOTILE_SECONDS
       seconds = Regexp.last_match(1).to_i / 20.0 if kind == :autotile && name[/\[\s*(\d+)\s*\]\s*$/]
       handle = @native.add_source(bitmap, kind == :tileset ? 0 : 1, seconds)
-      keep = bitmap.mega?
-      bitmap.dispose if !keep
+      keep = own && bitmap.mega? # read in place by the native side: alive until released
+      bitmap.dispose if own && !keep
       @sources[key] = [handle, 1, keep ? bitmap : nil]
+    end
+
+    # Returns [bitmap, owned]. Tall images (above 1024 px) become CPU "mega" bitmaps that the
+    # native renderer reads in place, so they are loaded uncached and owned here. Other autotiles
+    # come from RPG::Cache (copied by the native side, left to the cache). A missing tileset
+    # gives a blank bitmap, like Essentials' loader.
+    def load_bitmap(kind, name)
+      if kind == :autotile
+        bitmap = pbGetAutotile(name)
+        return [bitmap, false] if !bitmap.mega?
+
+        return [Bitmap.new("Graphics/Autotiles/" + name), true]
+      end
+      [Bitmap.new("Graphics/Tilesets/" + name), true]
+    rescue StandardError, MKXPError
+      [Bitmap.new(32, 32), true]
     end
 
     def remove_source(kind, name)
       entry = @sources[[kind, name]]
       return if !entry
 
-      entry[1] -= 1
-      return if entry[1] > 0
+      entry[1] -= 1 if entry[1] > 0
+    end
 
-      @native.remove_source(entry[0]) if !@native.disposed?
-      entry[2]&.dispose
-      @sources.delete([kind, name])
+    # Releases sources nobody uses any more, once per frame: a map transfer removes and re-adds
+    # the same tileset, which then stays in the atlas instead of being decoded again.
+    def release_unused
+      @sources.delete_if do |_key, entry|
+        next false if entry[1] > 0
+
+        @native.remove_source(entry[0])
+        entry[2]&.dispose
+        true
+      end
     end
 
     def handle(kind, name)
@@ -131,7 +153,8 @@ module RMXP3DS
         n.times do |id|
           p = (prio && prio[id]) || 0
           tag = GameData::TerrainTag.try_get((tags && tags[id]) || 0)
-          t[id] = (p & 7) | (tag&.shows_reflections ? 8 : 0) | (tag&.bridge ? 16 : 0)
+          p = 0 if p < 0 || p > 7 # out-of-range priorities count as 0
+          t[id] = p | (tag&.shows_reflections ? 8 : 0) | (tag&.bridge ? 16 : 0)
         end
         t
       end

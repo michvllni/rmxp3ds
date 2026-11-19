@@ -174,6 +174,7 @@ jobs:
                 --sd-file build/tilecheck/tileset.png=rmxp3ds/game/Graphics/Tilesets/tileset.png \
                 --sd-file build/tilecheck/autotile.png=rmxp3ds/game/Graphics/Autotiles/autotile.png \
                 --sd-file build/tilecheck/single.png=rmxp3ds/game/Graphics/Autotiles/single.png \
+                --sd-file build/tilecheck/autotile192.png=rmxp3ds/game/Graphics/Autotiles/autotile192.png \
                 --timeout 300 --screenshot build/tile-smoke.png'
       - name: Upload artifacts
         if: always()

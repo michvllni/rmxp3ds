@@ -38,6 +38,9 @@ begin
   single_bmp = Bitmap.new('Graphics/Autotiles/single')
   h_single = r.add_source(single_bmp, 1, 0.25)
   single_bmp.dispose
+  at192_bmp = Bitmap.new('Graphics/Autotiles/autotile192')
+  h_at192 = r.add_source(at192_bmp, 1, 0.25)
+  at192_bmp.dispose
   check.call('frame_counts', r.frame_count(h_at) == 2 && r.frame_count(h_single) == 2,
              "#{r.frame_count(h_at)}, #{r.frame_count(h_single)}")
 
@@ -51,10 +54,16 @@ begin
   data[7, 5, 1] = TS + 50    # priority 1 under a sprite at z 226
   data[8, 5, 0] = TS + 60    # reflective (z -100), under a sprite at z -50
   data[10, 5, 1] = TS + 100  # priority 0 on layer 1 over layer 0
+  data[4, 3, 0] = 96 + 1     # 192 px autotile (slot 1), sub-tile 1 stored whole
+  data[12, 5, 1] = TS + 70   # priority 1 and bridge: z 0 while a bridge is active
   flags = Table.new(TS + 272)
   flags[TS + 50] = 1         # priority 1
   flags[TS + 60] = 8         # shows reflections
-  map = [data, flags, 0, 0, h_ts, [h_at], [], [h_single]]
+  flags[TS + 70] = 1 | 16    # priority 1, bridge
+  map = [data, flags, 0, 0, h_ts, [h_at, h_at192], [], [h_single]]
+  # a second, later map: 4 x 4 x 1 layer, all blank, at tile offset (-10, -1): it covers screen
+  # cells (10..13, 1..4) and overwrites the first map there with nothing
+  blank = [Table.new(4, 4, 1), nil, -10, -1, h_ts, [], [], []]
 
   sprite_at = lambda do |x, y, z, color|
     s = Sprite.new(vp)
@@ -69,6 +78,7 @@ begin
   sprite_at.call(7 * 32, 5 * 32, 226, [255, 0, 0])   # above it
   sprite_at.call(8 * 32, 5 * 32, -50, [0, 0, 255])   # above the reflective tile (z -100)
   sprite_at.call(9 * 32, 5 * 32, -50, [0, 255, 0])   # below the ground tile (z 0)
+  sprite_at.call(12 * 32, 5 * 32, 10, [255, 0, 255]) # below the bridge tile (z 225), above it on a bridge (z 0)
 
   snap = lambda do |&blk|
     2.times { Graphics.update }
@@ -79,8 +89,14 @@ begin
   end
   n_at = ->(x, y) { 1 + ((x + y * 8) % 271) }
 
-  r.update([map], 0, 0, false, 0.0)
+  r.update([map, blank], 0, 0, false, 0.0)
   snap.call do |px|
+    c = px.call(11 * 32 + 16, 2 * 32 + 16)
+    check.call('later_map_blank_overwrites', near.call(c, [0, 0, 0]), c.inspect)
+    c = px.call(4 * 32 + 16, 3 * 32 + 16)
+    check.call('autotile_192_whole_subtile', near.call(c, [10, 20, 30]), c.inspect)
+    c = px.call(12 * 32 + 16, 5 * 32 + 16)
+    check.call('bridge_off_priority', near.call(c, tile_color.call(70)), c.inspect)
     c = px.call(1 * 32 + 16, 1 * 32 + 16)
     check.call('tileset_tile', near.call(c, tile_color.call(n_at.call(1, 1))), c.inspect)
     c = px.call(6 * 32 + 16, 1 * 32 + 16)
@@ -104,6 +120,12 @@ begin
     check.call('layer1_over_layer0', near.call(c, tile_color.call(100)), c.inspect)
     c = px.call(19 * 32 + 16, 1 * 32 + 16)
     check.call('outside_map_empty', near.call(c, [0, 0, 0]), c.inspect)
+  end
+
+  r.update([map], 0, 0, true, 0.0)
+  snap.call do |px|
+    c = px.call(12 * 32 + 16, 5 * 32 + 16)
+    check.call('bridge_on_ground', near.call(c, [255, 0, 255]), c.inspect)
   end
 
   # 0.3 s later: frame 1 of both autotiles
@@ -139,6 +161,13 @@ begin
   ts.dispose
   r.dispose
   check.call('dispose', r.disposed?)
+  after = begin
+    r.add_source(Bitmap.new(32, 32), 1, 0.25)
+    'accepted'
+  rescue RGSSError, StandardError => e
+    e.class.name
+  end
+  check.call('use_after_dispose_raises', after != 'accepted', after)
 rescue Exception => e # rubocop:disable Lint/RescueException (MKXPError is not a StandardError)
   check.call('exception', false, "#{e.class}: #{e.message} @ #{e.backtrace&.first}")
 end

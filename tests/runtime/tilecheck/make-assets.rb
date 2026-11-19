@@ -15,6 +15,9 @@
 #                       [40 + f * 100, c * 5, 50, 255]
 #     DIR/single.png    64x32 RGBA, a single-tile autotile with 2 frames: frame 0 solid
 #                       [250, 250, 0, 255], frame 1 solid [0, 250, 250, 255]
+#     DIR/autotile192.png 96x192 RGBA, a 1-frame block autotile in Essentials' 192 px variant:
+#                       the 32x32 block at (0, 128), stored whole for sub-tile 1, is solid
+#                       [10, 20, 30, 255]; everything else [200, 200, 200, 255]
 #   PNGs are written with Zlib only (no gems).
 #
 # OPTIONS
@@ -72,4 +75,7 @@ write_png(File.join(out_dir, 'autotile.png'), 192, 128) do |x, y|
 end
 write_png(File.join(out_dir, 'single.png'), 64, 32) do |x, _y|
   x < 32 ? [250, 250, 0, 255] : [0, 250, 250, 255]
+end
+write_png(File.join(out_dir, 'autotile192.png'), 96, 192) do |x, y|
+  x < 32 && y >= 128 && y < 160 ? [10, 20, 30, 255] : [200, 200, 200, 255]
 end
