@@ -6,8 +6,8 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 ## Status
 - **2026-11-19:** M3 exit reached (D16): Pokémon Essentials v21.1 (local copy) reaches its title
   screen on the New 3DS. The title opens 19.9 s after start and runs at 40.0 FPS; the snapshot
-  matches Azahar's (Measurements, Essentials title run attempt 5). Open: merge the fork PRs and
-  bump `runtime/` to fork `dev`. Next: M4.
+  matches Azahar's (Measurements, Essentials title run attempt 5). The runtime is fork `dev`
+  `29930935`. Next: M4.
 - **2026-11-18:** M3 in progress: SDL2 utility libraries for the 3DS (fork `3ds/deps`, test app
   `tools/sdlcheck`); mkxp-z runs on the 3DS with the citro3d renderer (D14, D15): engine, render
   (27 checks) and synthetic title screen checks pass in Azahar and on the New 3DS (hardware run
@@ -362,6 +362,9 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 ## Measurements
 Console numbers only, with date, commits of both repos and settings.
 
+- **Commit note (2026-11-19):** fork https://github.com/michvllni/mkxp-z-3ds/pull/7, /8 and /6 were
+  squash-merged into `dev` (`2cb116f8`, `1265dcc7`, `29930935`). `29930935` has the same tree as
+  `43e7ae75`, the runtime in the Essentials title runs 2–5.
 - **Commit note:** after fork https://github.com/michvllni/mkxp-z-3ds/pull/5 was merged, the renderer
   branches were rebased onto `dev`: `3855a84d` → `952f37f9`, `9c9e785e` → `46949580`,
   `306dd26a` → `f81aa12a` (same changes).
