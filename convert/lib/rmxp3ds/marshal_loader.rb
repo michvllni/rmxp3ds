@@ -1,28 +1,37 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-# Loads RPG Maker XP data files (.rxdata, Marshal) on the PC without RGSS. Classes the data
-# names (RPG::Map, RPG::Tileset, a game's own classes ...) are defined on first use as empty
-# classes that keep their instance variables; classes with a binary _dump (Table, Color, Tone,
-# unknown user types) keep their raw bytes, and Table also decodes its RGSS layout. Nothing from
-# the data is executed: only empty classes are created, at top level as Marshal looks them up,
-# so the converter runs in its own process.
+# Reads RPG Maker XP data files (.rxdata, Ruby Marshal format 4.8) on the PC without RGSS and
+# without Ruby's Marshal.load: a pure reader that never instantiates or calls a Ruby class named
+# in the data, so a crafted file cannot run code through existing classes (Marshal gadgets).
+# Objects become Plain (class name + instance variables), user-dumped objects (_dump: Table,
+# Color, Tone ...) become Raw with their bytes (Table also decodes its RGSS layout), strings keep
+# their bytes (UTF-8 if the data says so, else binary).
 module RMXP3DS
   module Data
-    # Base for auto-created classes: instance variables are readable with #[] (:name or '@name').
+    class FormatError < StandardError; end
+
+    # An object from the data: its class name and instance variables (readable with #[]).
     class Plain
+      attr_reader :class_name, :ivars
+
+      def initialize(class_name)
+        @class_name = class_name
+        @ivars = {}
+      end
+
+      # Instance variable by name (:tileset_name, '@tileset_name').
       def [](name)
         name = name.to_s
-        instance_variable_get(name.start_with?('@') ? name : "@#{name}")
+        @ivars[name.start_with?('@') ? name : "@#{name}"]
       end
     end
 
-    # Auto-created class with a binary _dump: the bytes as they were.
+    # A user-dumped object (_dump / marshal_load data): class name and bytes or data.
     class Raw
-      attr_reader :raw
+      attr_reader :class_name, :raw
 
-      def self._load(str)
-        obj = allocate
-        obj.instance_variable_set(:@raw, str)
-        obj
+      def initialize(class_name, raw)
+        @class_name = class_name
+        @raw = raw
       end
     end
 
@@ -30,14 +39,11 @@ module RMXP3DS
     class Table < Raw
       attr_reader :xsize, :ysize, :zsize
 
-      def self._load(str)
-        obj = super
-        _dim, x, y, z, n = str.unpack('l<5')
-        obj.instance_variable_set(:@xsize, x)
-        obj.instance_variable_set(:@ysize, y)
-        obj.instance_variable_set(:@zsize, z)
-        obj.instance_variable_set(:@data, str.byteslice(20, n * 2).unpack('s<*'))
-        obj
+      def initialize(class_name, raw)
+        super
+        raise FormatError, 'Table data too short' if raw.bytesize < 20
+        _dim, @xsize, @ysize, @zsize, n = raw.unpack('l<5')
+        @data = raw.byteslice(20, n * 2).to_s.unpack('s<*')
       end
 
       def [](x, y = 0, z = 0)
@@ -45,55 +51,202 @@ module RMXP3DS
       end
     end
 
-    # Upper bound of classes defined while loading one file (guards against a loop on an error
-    # message that define_missing misreads).
-    MAX_NEW_CLASSES = 500
+    # Struct from the data ('S'): class name and members.
+    class StructValue < Plain; end
 
     module_function
 
-    # Marshal.load of a file with auto-created classes. Raises on a damaged file.
     def load_file(path)
       load(File.binread(path))
     end
 
     def load(bytes)
-      MAX_NEW_CLASSES.times do
-        return Marshal.load(bytes)
-      rescue ArgumentError, TypeError => e
-        raise unless define_missing(e.message)
-      end
-      raise ArgumentError, 'too many unknown classes in the data'
+      Reader.new(bytes).read
     end
 
-    # Defines the class named in a Marshal error: "undefined class/module RPG::Map" (a plain
-    # class) or "class RPG::X needs to have method `_load'" (a raw-bytes class; Table decodes).
-    # Returns false for any other message (the caller re-raises).
-    def define_missing(message)
-      if (m = message.match(%r{undefined class/module ([\w:]+)}))
-        define_path(m[1], Plain)
-      elsif (m = message.match(/class ([\w:]+) needs to have method `_load'/))
-        define_path(m[1], m[1] == 'Table' ? Table : Raw, replace: true)
-      else
-        return false
-      end
-      true
-    end
+    # Marshal 4.8 reader (format: ruby/doc/marshal.rdoc). Depth-limited against nesting bombs.
+    class Reader
+      MAX_DEPTH = 2000
 
-    # Defines A::B::C at top level: missing namespaces as plain classes (Marshal accepts a class
-    # as namespace), C with the given superclass. An existing C is kept, unless `replace` is set
-    # and C is one of our plain classes (it then lacked _load).
-    def define_path(path, superclass, replace: false)
-      parts = path.split('::')
-      scope = parts[0..-2].reduce(Object) do |s, name|
-        s.const_defined?(name, false) ? s.const_get(name, false) : s.const_set(name, Class.new(Plain))
+      def initialize(bytes)
+        @s = bytes.b
+        @pos = 0
+        @symbols = []
+        @objects = []
+        @depth = 0
       end
-      name = parts.last
-      if scope.const_defined?(name, false)
-        existing = scope.const_get(name, false)
-        return existing unless replace && existing.is_a?(Class) && existing <= Plain
-        scope.send(:remove_const, name)
+
+      def read
+        major, minor = byte, byte
+        raise FormatError, "not Marshal 4.8 data (#{major}.#{minor})" unless major == 4 && minor <= 8
+        value
       end
-      scope.const_set(name, Class.new(superclass))
+
+      private
+
+      def byte
+        b = @s.getbyte(@pos) or raise FormatError, 'data too short'
+        @pos += 1
+        b
+      end
+
+      def bytes(n)
+        raise FormatError, 'data too short' if n.negative? || @pos + n > @s.bytesize
+        str = @s.byteslice(@pos, n)
+        @pos += n
+        str
+      end
+
+      # Marshal's packed integer.
+      def int
+        c = byte
+        c -= 256 if c > 127
+        return 0 if c.zero?
+        return c - 5 if c > 4
+        return c + 5 if c < -4
+        if c.positive?
+          (0...c).reduce(0) { |v, i| v | (byte << (8 * i)) }
+        else
+          n = -c
+          v = (0...n).reduce(0) { |acc, i| acc | (byte << (8 * i)) }
+          v - (1 << (8 * n))
+        end
+      end
+
+      def symbol
+        case (t = byte.chr)
+        when ':' then new_symbol
+        when ';' then @symbols.fetch(int) { raise FormatError, 'bad symbol link' }
+        else raise FormatError, "symbol expected, got #{t.inspect}"
+        end
+      end
+
+      def new_symbol
+        sym = bytes(int).force_encoding('UTF-8')
+        sym = sym.b unless sym.valid_encoding?
+        @symbols << sym
+        sym
+      end
+
+      def register(obj)
+        @objects << obj
+        obj
+      end
+
+      def value
+        @depth += 1
+        raise FormatError, 'data nested too deep' if @depth > MAX_DEPTH
+        read_value
+      ensure
+        @depth -= 1
+      end
+
+      def read_value
+        type = byte.chr
+        case type
+        when '0' then nil
+        when 'T' then true
+        when 'F' then false
+        when 'i' then int
+        when ':' then new_symbol
+        when ';' then @symbols.fetch(int) { raise FormatError, 'bad symbol link' }
+        when '@' then @objects.fetch(int) { raise FormatError, 'bad object link' }
+        when 'I' then with_ivars
+        when '"' then register(bytes(int))
+        when 'l'
+          sign = byte.chr
+          n = int * 2
+          v = bytes(n).bytes.each_with_index.sum { |b, i| b << (8 * i) }
+          register(sign == '-' ? -v : v)
+        when 'f'
+          s = bytes(int)
+          register(case s
+                   when 'inf' then Float::INFINITY
+                   when '-inf' then -Float::INFINITY
+                   when 'nan' then Float::NAN
+                   else s.to_f
+                   end)
+        when '[' then array
+        when '{', '}' then hash(type == '}')
+        when 'o' then object
+        when 'u'
+          name = symbol
+          register(user(name, bytes(int)))
+        when 'U'
+          name = symbol
+          obj = register(Raw.new(name, nil))
+          obj.instance_variable_set(:@raw, value)
+          obj
+        when 'S' then struct
+        when 'c', 'm', 'M' then register(bytes(int)) # class/module reference: its name only
+        when '/'
+          src = bytes(int)
+          byte # options
+          register(src)
+        when 'e'
+          symbol # extended module: ignored
+          value
+        when 'C'
+          symbol # user subclass of String/Array/Hash: the base value
+          value
+        else
+          raise FormatError, "unsupported Marshal type #{type.inspect} at byte #{@pos - 1}"
+        end
+      end
+
+      # 'I': a value followed by instance variables; for strings, E/encoding set the encoding.
+      def with_ivars
+        obj = value
+        int.times do
+          key = symbol
+          val = value
+          next unless obj.is_a?(String)
+          if key == 'E'
+            obj.force_encoding(val ? 'UTF-8' : 'US-ASCII')
+          elsif key == 'encoding'
+            obj.force_encoding(val.to_s) rescue obj.force_encoding('BINARY') # rubocop:disable Style/RescueModifier
+          end
+        end
+        obj
+      end
+
+      def array
+        arr = register([])
+        int.times { arr << value }
+        arr
+      end
+
+      def hash(with_default)
+        h = register({})
+        int.times do
+          k = value
+          h[k] = value
+        end
+        value if with_default # default value: ignored
+        h
+      end
+
+      def object
+        obj = register(Plain.new(symbol))
+        int.times do
+          key = symbol
+          obj.ivars[key] = value
+        end
+        obj
+      end
+
+      def struct
+        obj = register(StructValue.new(symbol))
+        int.times do
+          key = symbol
+          obj.ivars["@#{key}"] = value
+        end
+        obj
+      end
+
+      def user(name, raw)
+        name == 'Table' ? Table.new(name, raw) : Raw.new(name, raw)
+      end
     end
   end
 end

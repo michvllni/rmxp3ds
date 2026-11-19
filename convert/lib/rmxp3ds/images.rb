@@ -11,8 +11,12 @@ module RMXP3DS
         if head.start_with?("\x89PNG\r\n\x1a\n".b) && head[12, 4] == 'IHDR'
           head[16, 8].unpack('NN')
         elsif head.start_with?('BM')
-          w, h = head[18, 8].unpack('l<l<')
-          [w, h.abs]
+          if head[14, 4].unpack1('V') == 12 # OS/2 BITMAPCOREHEADER: 16-bit sizes
+            head[18, 4].unpack('vv')
+          else
+            w, h = head[18, 8].unpack('l<l<')
+            [w, h.abs]
+          end
         elsif head.start_with?("\xFF\xD8".b)
           jpeg_size(f)
         end

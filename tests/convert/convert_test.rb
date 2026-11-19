@@ -76,7 +76,84 @@ class ConvertTest < Minitest::Test
     make_game
     _o, err, st = Open3.capture3(RbConfig.ruby, CONVERT, '--game', @game, '--out', File.join(@game, 'sd'))
     assert_equal 1, st.exitstatus
-    assert_includes err, 'must not be inside the game directory'
+    assert_includes err, '--out overlaps the game directory'
+  end
+
+  # The game inside OUT/rmxp3ds (e.g. converting a package again into the same SD tree): --clean
+  # would delete the game, so it is refused.
+  def test_game_inside_the_package_tree_is_refused
+    inner = File.join(@out, 'rmxp3ds/games/t')
+    _o, e, s = Open3.capture3(RbConfig.ruby, MAKE_GAME, '--out', inner)
+    assert s.success?, e
+    _o, err, st = Open3.capture3(RbConfig.ruby, CONVERT, '--game', inner, '--out', @out, '--id', 't', '--clean')
+    assert_equal 1, st.exitstatus
+    assert_includes err, '--out overlaps the game directory'
+    assert File.file?(File.join(inner, 'Game.ini'))
+  end
+
+  def test_package_of_another_game_is_refused
+    make_game
+    assert convert('--id', 't')[2].success?
+    other = File.join(@tmp, 'other')
+    Open3.capture3(RbConfig.ruby, MAKE_GAME, '--out', other)
+    _o, err, st = Open3.capture3(RbConfig.ruby, CONVERT, '--game', other, '--out', @out, '--id', 't')
+    assert_equal 1, st.exitstatus
+    assert_includes err, 'holds a package of'
+    _o, _e, st = Open3.capture3(RbConfig.ruby, CONVERT, '--game', other, '--out', @out, '--id', 't', '--clean')
+    assert st.success?
+  end
+
+  def test_stale_files_are_removed
+    make_game
+    convert('--id', 't')
+    File.delete(File.join(@game, 'Graphics/Pictures/rmxp3ds-test.png'))
+    out, _e, st = convert('--id', 't')
+    assert st.success?
+    assert_includes out, 'removed 1 files'
+    refute File.exist?(pkg('Graphics/Pictures/rmxp3ds-test.png'))
+    assert File.file?(pkg('mkxp.json'))
+  end
+
+  def test_names_differing_in_case_are_an_error
+    make_game
+    FileUtils.cp(File.join(@game, 'Graphics/Pictures/rmxp3ds-test.png'), File.join(@game, 'Graphics/Pictures/RMXP3DS-test.png'))
+    out, _e, st = convert('--id', 't')
+    assert_equal 1, st.exitstatus
+    assert_includes out, 'names differ only in case'
+  end
+
+  def test_name_not_utf8_is_an_error
+    make_game
+    File.write(File.join(@game, "Graphics/Pictures/caf\xE9.png".b), 'x')
+    out, _e, st = convert('--id', 't')
+    assert_equal 1, st.exitstatus
+    assert_includes out, 'the file name is not UTF-8'
+  end
+
+  # Names in the data are UTF-8 bytes; the file index must match them (and fold case).
+  def test_non_ascii_names_in_the_data
+    make_game
+    FileUtils.cp(File.join(@game, 'Graphics/Pictures/rmxp3ds-test.png'), File.join(@game, 'Graphics/Tilesets/Pokémon.png'))
+    ts = Class.new { def initialize = (@tileset_name, @autotile_names = 'POKÉMON'.b, ['ÉCRAN']) }
+    Object.const_set(:RMXP3DSTilesetProbe, ts)
+    File.binwrite(File.join(@game, 'Data/Tilesets.rxdata'), Marshal.dump([nil, RMXP3DSTilesetProbe.new]))
+    out, _e, st = convert('--id', 't', '--dry-run')
+    assert st.success?
+    refute_includes out, 'Graphics/Tilesets/POK'
+    assert_includes out, 'Graphics/Autotiles/ÉCRAN (Tilesets.rxdata #1)'
+  ensure
+    Object.send(:remove_const, :RMXP3DSTilesetProbe) if defined?(RMXP3DSTilesetProbe)
+  end
+
+  def test_symlink_outside_the_game_is_left_out
+    make_game
+    secret = File.join(@tmp, 'secret.txt')
+    File.write(secret, 'x')
+    File.symlink(secret, File.join(@game, 'Data/link.txt'))
+    out, _e, st = convert('--id', 't')
+    assert st.success?
+    assert_includes out, 'Data/link.txt: symbolic link to a file outside the game, left out'
+    refute File.exist?(pkg('Data/link.txt'))
   end
 
   def test_wrong_arguments
@@ -84,7 +161,9 @@ class ConvertTest < Minitest::Test
     assert_equal 2, st.exitstatus
     make_game
     _o, _e, st = convert('--id', 'a/b')
-    assert_equal 1, st.exitstatus
+    assert_equal 2, st.exitstatus
+    _o, _e, st = convert('--preload', File.join(@tmp, 'nothing.rb'))
+    assert_equal 2, st.exitstatus
   end
 
   # An Essentials-like script list (synthetic text with the markers the profile looks for).
@@ -110,18 +189,32 @@ class ConvertTest < Minitest::Test
     assert_match(/Win32API user32: 1 script\(s\) \(Keys\)/, out)
   end
 
-  def test_marshal_loader_unknown_classes
-    obj = Class.new { def initialize; @v = 5; end }
-    Object.const_set(:RMXP3DSLoaderProbe, obj)
-    bytes = Marshal.dump([RMXP3DSLoaderProbe.new])
-    Object.send(:remove_const, :RMXP3DSLoaderProbe)
-    loaded = RMXP3DS::Data.load(bytes.sub('RMXP3DSLoaderProbe', 'RMXP3DSLoaderProb2'))
-    assert_equal 5, loaded[0][:v]
-    raw = Class.new { def _dump(_d) = 'abc' }
-    Object.const_set(:RMXP3DSRawProbe, raw)
-    bytes = Marshal.dump(RMXP3DSRawProbe.new).sub('RMXP3DSRawProbe', 'RMXP3DSRawProb2')
-    Object.send(:remove_const, :RMXP3DSRawProbe)
-    assert_equal 'abc', RMXP3DS::Data.load(bytes).raw
+  # The reader never instantiates classes named in the data, existing ones included.
+  def test_marshal_reader
+    probe = Class.new do
+      def initialize = (@v = 5)
+      def marshal_load(_d) = raise('must not be called')
+      def _dump(_d) = 'abc'
+    end
+    Object.const_set(:RMXP3DSLoaderProbe, probe)
+    plain = Class.new { def initialize = (@v = [1, 'é', { a: 2.5 }]) }
+    Object.const_set(:RMXP3DSPlainProbe, plain)
+    raw = RMXP3DS::Data.load(Marshal.dump(RMXP3DSLoaderProbe.new))
+    assert_instance_of RMXP3DS::Data::Raw, raw
+    assert_equal ['RMXP3DSLoaderProbe', 'abc'], [raw.class_name, raw.raw]
+    obj = RMXP3DS::Data.load(Marshal.dump([RMXP3DSPlainProbe.new] * 2))
+    assert_same obj[0], obj[1]
+    assert_equal 'RMXP3DSPlainProbe', obj[0].class_name
+    assert_equal [1, 'é', { 'a' => 2.5 }], obj[0][:v].map { |v| v.is_a?(Hash) ? v.transform_keys(&:to_s) : v }
+    assert_equal Encoding::UTF_8, obj[0][:v][1].encoding
+    assert_nil RMXP3DS::Data.load(Marshal.dump(nil))
+    [0, -1, 122, -124, 255, -256, 2**40, -(2**70), 'x'.b, true].each do |v|
+      assert_equal v, RMXP3DS::Data.load(Marshal.dump(v))
+    end
+    assert_raises(RMXP3DS::Data::FormatError) { RMXP3DS::Data.load("\x04\x08[\x07".b) }
+  ensure
+    Object.send(:remove_const, :RMXP3DSLoaderProbe) if defined?(RMXP3DSLoaderProbe)
+    Object.send(:remove_const, :RMXP3DSPlainProbe) if defined?(RMXP3DSPlainProbe)
   end
 
   def test_image_sizes
@@ -131,6 +224,8 @@ class ConvertTest < Minitest::Test
     bmp = File.join(@tmp, 'a.bmp')
     File.binwrite(bmp, 'BM' + "\0" * 16 + [64, -48].pack('l<l<') + "\0" * 8)
     assert_equal [64, 48], RMXP3DS::Images.size(bmp)
+    File.binwrite(bmp, 'BM' + "\0" * 12 + [12, 640, 480].pack('Vvv') + "\0" * 4)
+    assert_equal [640, 480], RMXP3DS::Images.size(bmp)
     jpg = File.join(@tmp, 'a.jpg')
     File.binwrite(jpg, "\xFF\xD8\xFF\xE0".b + [4].pack('n') + "\0\0".b + "\xFF\xC0".b + [17].pack('n') +
                        [8, 120, 1300].pack('Cnn') + "\0" * 12)

@@ -179,9 +179,19 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
       from the game.
     - Images over 1024 px.
     - Win32API/DLL and Fiddle use.
-  - **Loading data without RGSS:** the data is read with a Marshal loader that creates the classes it
-    names as empty classes (Table decoded, other `_dump` types kept as bytes), so a game's own
-    classes in its data do not stop the scan.
+  - **Loading data without RGSS:** the data is read by a pure-Ruby reader of Marshal 4.8
+    (`convert/lib/rmxp3ds/marshal_loader.rb`), not `Marshal.load`.
+    - Objects become class name plus instance variables; Table is decoded; other `_dump` types
+      are kept as bytes.
+    - No class named in the data is ever instantiated, so a crafted `.rxdata` from a downloaded
+      game cannot run code through existing classes (Marshal gadget chains).
+    - It loads Essentials' 86 data files in 0.33 s; Map041's tile Table matches Marshal.load's.
+  - **Package safety:**
+    - The output may not overlap the game (symbolic links resolved).
+    - A package directory records its source game, and another game is refused without `--clean`.
+    - Files the game no longer has are removed on the next run.
+    - File names that are not UTF-8, or that differ only in case, are errors; symbolic links to
+      files outside the game are left out.
 - **Essentials v21.1 (local copy):**
   - The scan takes 0.4 s. It covers 7596 files (56.7 MiB); 10 files (27.5 MiB) are left out:
     the exes, DLLs, the soundfont and others.

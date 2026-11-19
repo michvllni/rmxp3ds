@@ -26,6 +26,7 @@ module RMXP3DS
     end
 
     def run
+      @game.problems.each { |level, text| add(level, text) }
       check_names
       check_references
       check_images
@@ -52,24 +53,32 @@ module RMXP3DS
         end
         add(:error, "#{f}: path longer than 200 characters") if f.bytesize > 200
       end
+      @files.group_by(&:downcase).each_value do |same|
+        next if same.size < 2
+        add(:error, "#{same.join(', ')}: names differ only in case (one file on the SD card, FAT32)")
+      end
     end
 
     # --- references in the data -------------------------------------------------------------
 
-    def ref(dir, name, where, exts)
+    # Notes dir/name as missing unless a file with one of the extensions (or none) exists, case
+    # ignored. `alt` is a second directory that also counts (Essentials' Audio/SE/Anim).
+    def ref(dir, name, where, exts, alt: nil)
       return if name.nil? || !name.is_a?(String) || name.empty?
-      key = "#{dir}/#{name}".tr('\\', '/')
-      hits = @game.file_index[key.downcase]
-      found = hits&.any? { |f| exts.include?(File.extname(f).downcase) || File.extname(f).empty? }
-      @missing[key] ||= where unless found
+      name = name.dup.force_encoding('UTF-8').scrub('?').tr('\\', '/')
+      found = [dir, alt].compact.any? do |d|
+        hits = @game.file_index["#{d}/#{name}".downcase]
+        hits&.any? { |f| exts.include?(File.extname(f).downcase) || File.extname(f).empty? }
+      end
+      @missing["#{dir}/#{name}"] ||= where unless found
     end
 
     def img(dir, name, where)
       ref("Graphics/#{dir}", name, where, IMAGE_EXT)
     end
 
-    def audio(dir, file, where)
-      ref("Audio/#{dir}", file && file[:name], where, AUDIO_EXT) if file.is_a?(Data::Plain)
+    def audio(dir, file, where, alt: nil)
+      ref("Audio/#{dir}", file && file[:name], where, AUDIO_EXT, alt: alt) if file.is_a?(Data::Plain)
     end
 
     def load(name)
@@ -105,9 +114,19 @@ module RMXP3DS
         img('Battlers', a[:battler_name], "Actors.rxdata ##{i}")
       end
       each_entry(load('Enemies.rxdata')) { |e, i| img('Battlers', e[:battler_name], "Enemies.rxdata ##{i}") }
+      %w[Items Weapons Armors Skills].each do |db|
+        each_entry(load("#{db}.rxdata")) do |e, i|
+          img('Icons', e[:icon_name], "#{db}.rxdata ##{i}")
+          audio('SE', e[:menu_se], "#{db}.rxdata ##{i}")
+        end
+      end
+      # Essentials plays animation sounds from Audio/SE/Anim (its battle animation player).
+      anim_alt = @game.profile[:id].start_with?('essentials') ? 'Audio/SE/Anim' : nil
       each_entry(load('Animations.rxdata')) do |a, i|
         img('Animations', a[:animation_name], "Animations.rxdata ##{i}")
-        Array(a[:timings]).each { |t| audio('SE', t[:se], "Animations.rxdata ##{i}") if t.is_a?(Data::Plain) }
+        Array(a[:timings]).each do |t|
+          audio('SE', t[:se], "Animations.rxdata ##{i}", alt: anim_alt) if t.is_a?(Data::Plain)
+        end
       end
       each_entry(load('CommonEvents.rxdata')) { |c, i| commands(c[:list], "CommonEvents.rxdata ##{i}") }
       check_maps
@@ -154,6 +173,7 @@ module RMXP3DS
         when 204
           img('Panoramas', p[1], where) if p[0] == 0
           img('Fogs', p[1], where) if p[0] == 1
+          img('Battlebacks', p[1], where) if p[0] == 2
         when 209 then route(p[1], where)
         when 222 then img('Transitions', p[0], where)
         when 231 then img('Pictures', p[1], where)
@@ -182,7 +202,7 @@ module RMXP3DS
 
     def check_images
       @files.each do |f|
-        next unless f.start_with?('Graphics/') && IMAGE_EXT.include?(File.extname(f).downcase)
+        next unless f.downcase.start_with?('graphics/') && IMAGE_EXT.include?(File.extname(f).downcase)
         w, h = Images.size(File.join(@game.dir, f))
         if w.nil?
           add(:warning, "#{f}: unknown image format or damaged header")

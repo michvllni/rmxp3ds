@@ -1,4 +1,4 @@
-#!/usr/bin/env ruby
+#!/usr/bin/env -S ruby --disable-gems
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # SYNOPSIS
@@ -17,12 +17,14 @@
 #   images over the 3DS texture limit, graphics and audio the data names but the game lacks,
 #   Win32API/DLL calls, and file names the SD card cannot hold (errors: nothing is written).
 #   Game files stay where they are and are never part of this repository. Running it again
-#   copies only files that changed.
+#   copies only files that changed and removes files the game no longer has. The data files are
+#   read by a Marshal reader of our own that never runs code from them.
 #
 # OPTIONS
 #   --game DIR          game directory (Game.ini, Data/, Graphics/ ...)
 #   --out DIR           output directory (SD card layout)
-#   --id ID             package directory name (default: from the title; letters, digits, - _)
+#   --id ID             package directory name (default: from the title; letters, digits, - _).
+#                       A package directory belongs to one game: another game needs another ID
 #   --height PX         game screen height (default: detected; Essentials' SCREEN_HEIGHT, a literal
 #                       Graphics.resize_screen, else 480); the scaling factor is 240/PX
 #   --patch-set SET     auto (default: by profile, e.g. patches/essentials-v21), none, or a directory
@@ -34,7 +36,8 @@
 #   -h, --help          show this help
 #
 # EXIT STATUS
-#   0 package written (or dry run without errors), 1 errors in the game, 2 wrong arguments
+#   0 package written (or dry run without errors), 1 errors in the game or while writing,
+#   2 wrong arguments
 #
 # EXAMPLE
 #   convert/rmxp3ds-convert --game ~/games/essentials --out build/sd \
@@ -74,14 +77,17 @@ opts[:out] ||= File.expand_path('build/dry-run')
 
 begin
   game = RMXP3DS::Game.new(opts[:game])
-  if File.expand_path(opts[:out]).start_with?(File.join(game.dir, ''))
-    raise RMXP3DS::ConvertError, '--out must not be inside the game directory'
-  end
   pkg = RMXP3DS::Package.new(game, opts)
   ok = pkg.run(dry_run: opts[:dry_run])
   puts pkg.report
   exit(ok ? 0 : 1)
-rescue RMXP3DS::ConvertError => e
+rescue RMXP3DS::ArgumentsError => e
   warn "rmxp3ds-convert: #{e.message}"
+  exit 2
+rescue RMXP3DS::ConvertError, SystemCallError, IOError => e
+  warn "rmxp3ds-convert: #{e.message}"
+  exit 1
+rescue StandardError => e
+  warn "rmxp3ds-convert: internal error #{e.class}: #{e.message} (#{e.backtrace&.first})"
   exit 1
 end
