@@ -4,6 +4,16 @@
 Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` from PLAN §10.
 
 ## Status
+- **2026-11-19:** M3 exit reached (D16): Pokémon Essentials v21.1 (local copy) reaches its title
+  screen on the New 3DS. The title opens 19.9 s after start and runs at 40.0 FPS; the snapshot
+  matches Azahar's (Measurements, Essentials title run attempt 5). The runtime is fork `dev`
+  `29930935`. Next: M4.
+- **2026-11-18:** M3 in progress: SDL2 utility libraries for the 3DS (fork `3ds/deps`, test app
+  `tools/sdlcheck`); mkxp-z runs on the 3DS with the citro3d renderer (D14, D15): engine, render
+  (27 checks) and synthetic title screen checks pass in Azahar and on the New 3DS (hardware run
+  3: title scene at 40 FPS, frame work under 8.3 ms, HOME and sleep survive). Pokémon Essentials
+  v21.1 reaches its title screen in Azahar. Open for the M3 exit (D16): the Essentials title on
+  the console.
 - **2026-11-18:** M2 done: Essentials v21.1 runs headlessly on the New 3DS (`tools/m2`, hardware
   run 2). Go/no-go: **go, full scope** (docs/DECISIONS.md D13). Next: M3.
 - **2026-11-18:** M1 done: CRuby 3.1.3 cross-built in the fork (`runtime/3ds/ruby`, merged into
@@ -38,8 +48,9 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 | devkitARM | r68 (arm-none-eabi-gcc 16.1.0) | pacman local db in image |
 | libctru / citro3d / citro2d | 2.7.0 / 1.7.1 / 1.7.0 | pacman local db in image |
 | tex3ds / picasso / 3dstools / 3dslink | 2.3.0 / 2.7.2 / 1.3.1 / 0.6.3 | pacman local db in image |
-| 3DS portlibs (in image via `3ds-portlibs`) | 3ds-zlib 1.3.1, 3ds-libpng 1.6.53, 3ds-freetype 2.14.1, 3ds-libogg 1.3.6, 3ds-libvorbisidec 1.2.1 (Tremor; no full libvorbis), 3ds-bzip2 1.0.8, 3ds-physfs 3.2.0, 3ds-libiconv 1.17, 3ds-pkg-config 0.28 | pacman local db in image |
+| 3DS portlibs (in image via `3ds-portlibs`) | 3ds-zlib 1.3.1, 3ds-libpng 1.6.53, 3ds-freetype 2.14.1, 3ds-libjpeg-turbo (libjpeg API 62), 3ds-libogg 1.3.6, 3ds-libvorbisidec 1.2.1 (Tremor; no full libvorbis), 3ds-bzip2 1.0.8, 3ds-physfs 3.2.0, 3ds-libiconv 1.17, 3ds-pkg-config 0.28 | pacman local db in image |
 
+| SDL2 / SDL2_image / SDL2_ttf (3DS, fork `3ds/deps`) | 2.32.10 / 2.8.12 / 2.24.0, release `.tar.gz` sha256 `5f5993c5…ca5165` / `393f5efb…785381` / `0b2bf1e7…bfd`; SDL2 and SDL2_image match GitHub's asset digests, SDL2_ttf verified with the SDL release key `1528635D8053A57F77D1E08630A59377A7763BE6` | GitHub releases API (`assets[].digest`), `.sig` files, keyserver.ubuntu.com |
 | ruby-build | `v20261023` | github.com/rbenv/ruby-build/releases |
 | Ruby (runtime + host baseruby) | **3.1.3** (upstream `ruby/ruby` tag `v3_1_3` + mkxp-z patches), not 3.1.6 | `runtime/subprojects/ruby-3.1.wrap` line 2; `runtime/meson_options.txt` line 1 `mri_version='3.1'` (mkxp-z `dev` @ 3c7c47c) |
 | Azahar | `2126.2` (2026-10-08), `azahar.AppImage` sha256 `af037f8b775198f636b14bcfe63fb401b02246ebfefe1025bb905ce042556960`; needs glibc ≥ 2.38 (not bookworm) | github.com/azahar-emu/azahar/releases/tag/2126.2 |
@@ -139,6 +150,155 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   JIT): while_loop_1M 670 ms, method_call_300k 1028 ms, object_alloc_200k 1637 ms,
   marshal_load_fixture 90 ms.
 
+## M3 findings (2026-11-18)
+- **Renderer architecture (D14):**
+  - The desk analysis proposed rewriting the drawing of each display class, because mkxp-z picks
+    among 31 GLSL programs and the PICA200 has no programmable fragment stage.
+  - A closer count shows the display classes use mkxp-z's own wrapper layer about 400 times and
+    call GL directly only about 19 times. The wrapper layer is TEX/FBO, Quad, ShaderSet and
+    GLState.
+  - So the 3DS build implements that wrapper layer on citro3d instead: each "shader" class becomes
+    a TEV preset. The display classes stay upstream's.
+  - Rewriting the display classes is the fallback if performance problems show up.
+- **Kept from upstream as-is:** the scene graph, the Ruby bindings, `etc/`, config, filesystem and
+  Input.
+- **SDL2 as a utility library** (fork `3ds/deps`):
+  - mkxp-z's Bitmap, Font and file code use SDL surfaces, SDL2_image, SDL2_ttf and RWops (about
+    150 references), so these stay. Video, audio and joystick are off.
+  - Version 2.32.10, not the meson wrap's 2.28.1, because 2.28.1 caps 3DS thread stacks at 16 KiB
+    (`src/thread/n3ds/SDL_systhread.c:30-31`). The Ruby thread needs about 1 MiB.
+  - SDL2_image uses libpng and libjpeg, not stb_image, which peaks at about twice the memory.
+  - `tools/sdlcheck` passes in Azahar:
+    - PNG pixel-exact;
+    - alpha blit with difference 0;
+    - text with the bundled Liberation Sans, 158×25 px at 22 pt;
+    - a 1 MiB thread (heap +1027 KiB) recursing 768 KiB deep;
+    - RWops on `sdmc:/`.
+- **Runtime builds and runs (fork `3ds/CMakeLists.txt`, `3ds/platform`):**
+  - mkxp-z's own sources and the 3DS replacements for main, event loop, filesystem and system
+    helpers, audio (silent) and HTTP make up `mkxp-z.3dsx` (7.6 MB).
+  - The GL function table is bookkeeping only, so nothing is drawn yet.
+  - The engine check (`tests/runtime/enginecheck`) passes in Azahar, 15 checks:
+    - Zlib, Table, Color/Tone/Rect, Marshal;
+    - Bitmap, text size;
+    - Sprite, Viewport, Window;
+    - 30 frames in 0.72 s at RGSS1's 40 FPS;
+    - Input, the RPG module and `System.platform`;
+    - a 256×4096 tileset in Tilemap, `play_movie` (skipped), controller name, `data_directory`.
+  - Pitfalls found: libruby's empty `Init_ext` must not shadow `extinit.a` (Zlib); SDL renames
+    `main`; PhysFS needs a path as argv[0]; meson `-Dc_args` drops the cross file's hard-float
+    flags.
+- **Renderer (fork `3ds/display/gl3ds.cpp`, citro3d):** first picture in Azahar. The render check
+  (`tests/runtime/rendercheck`) passes: fill, clear, `blt` (approximated: alpha blending instead of
+  mkxp-z's compositing shader), `draw_text`, read-back with `get_pixel`, and a scaled sprite in the
+  right orientation at 41 FPS (RGSS1 targets 40).
+  - **PICA facts found on the way:**
+    - Clip z must lie in [-w, 0].
+    - Render targets must be in VRAM (6 MB). Textures move there when first rendered into.
+    - The CPU cannot access VRAM on the console (permission fault; citro3d `texture.c`: "CPU
+      can't write to VRAM"), but Azahar allows it: copies to and from VRAM go through GX
+      (`C3D_SyncTextureCopy`), never `memcpy`.
+    - Azahar does not fault on reads near address 0 either: null-pointer bugs in citro3d calls
+      (e.g. `C3D_TexBind(1, NULL)`) only show on the console.
+    - citro3d's GX queue holds 32 entries per frame (`gxQueue.maxEntries`); every
+      `C3D_SyncTextureCopy` inside a frame takes two. `gspWaitForPPF` after a copy outside a frame
+      can return early (the event stays latched): wait for the queue instead.
+    - Texture memory starts with the top row (t = 1).
+    - `C3D_SetViewport` resets the scissor.
+    - `DVLB_ParseFile` needs 4-byte-aligned data.
+    - The top screen's framebuffer is rotated: window y runs along framebuffer x, window x against
+      framebuffer y.
+  - `glClear` ignores the viewport (mkxp-z's `fill_rect` is scissor + clear).
+- **Resolution (D15):** the game screen is rendered at 3DS height (640×480 at 320×240,
+  pillarboxed), using mkxp-z's Hires screen scaling. Bitmaps keep full size.
+- **Renderer review fixes (fork https://github.com/michvllni/mkxp-z-3ds/pull/4, two independent
+  reviews):**
+  - **GPU sync:** citro3d queues a frame and runs it at `C3D_FrameEnd`
+    (`renderqueue.c` v1.7.1: `C3D_FrameBegin` without `C3D_FRAME_NONBLOCK` waits for the GX queue;
+    `C3D_RenderTargetDelete` panics inside a frame; `C3D_FrameEnd` copies every linked target
+    with `used` to the display). Textures carry the serial of the last frame that used them;
+    CPU access waits only for that frame, busy linear textures get new memory instead, deleted
+    objects are freed after a GPU wait.
+  - **Command buffer:** libctru's `GPUCMD_Add` breaks into the debugger on overflow; 512 KB
+    buffer, frame submitted early when less than 1024 words are left (`gpuCmdBufOffset`, words).
+  - **VRAM:** creating and filling bitmaps no longer moves them to VRAM (CPU clears); least
+    recently used VRAM textures move back to linear memory when VRAM is full; mkxp-z's pool of
+    disposed bitmaps is 4 MB on the 3DS.
+  - **`Bitmap#blt`:** exact for transparent and opaque destination pixels on the TEV with the
+    destination copy on unit 1 (combiner buffer: a stage's output reaches the buffer input two
+    stages later; stage 0 reads the buffer as 0, the initial buffer color only from stage 1).
+- **Renderer stage B (fork https://github.com/michvllni/mkxp-z-3ds/pull/6):** one TEV effect chain for sprites,
+  planes, tilemap layers and gray (luma via per-channel multiply-add; color/flash mixed before
+  the tone, scaled by what the mixes leave, so the per-stage clamps give GLSL's result); sprite bush as a CPU
+  geometry split; viewport and screen effects; `Graphics.transition` plain and with a
+  transition image (texture units 1-3 → PICA 0-2, third texture coordinate).
+- **Upstream mkxp-z assumes Hires factors >= 1.** Found with factor 0.5, fixed with 3DS hooks:
+  scissor cache (`GLProperty::set` skips unchanged boxes that apply() scales), screen scene
+  geometry used for both buffer pixels and game coordinates (culled everything beyond 320×240),
+  shader blits projected with the Hires matrix, the gray shader's quad, the transition quad and
+  `resize_screen`'s scissor box in buffer pixels, `snap_to_bitmap` without bitmap twins. Plane's tiled path (no `npot_repeat`) ignored the viewport position. Upstream
+  reports are on hold (Carried over: backlog).
+- **Large textures:** mkxp-z keeps bitmaps above `GL_MAX_TEXTURE_SIZE` as CPU "mega surfaces"; only
+  its tileset atlas needs more than 1024 px (tilesets above about 1300 px at 1024). Per PLAN §3.2
+  and M4 the converter splits tall tilesets and the Tilemap becomes native, so >1024 px textures
+  move to M4; gl3ds reports 4096 until then.
+- **Pokémon Essentials v21.1 title screen (M3 exit, D16; local copy, `tools/title`):**
+  - First run: Essentials stopped in its first script section, `Encoding::UTF_8` was a NameError.
+    The runtime linked `enc/encinit.a` after `libruby-static.a`, whose `dmyenc.o` has an empty
+    `Init_enc`: only the built-in encodings, without constants. Fixed in the fork (link order,
+    https://github.com/michvllni/mkxp-z-3ds/pull/7); the engine check gained an `encodings` check.
+  - The probe first wrapped `Graphics.update`; Essentials aliases it in its singleton class, and
+    the alias of a prepended wrapper recursed (SystemStackError). It now hooks the title scene
+    through a `TracePoint(:end)` on class definitions.
+  - Azahar (emulator, timings don't count): scripts loaded and `IntroEventScene` defined after
+    8.8 s, two splash screens, title screen after 24.2 s, then 39.9 FPS on the title; 512×384
+    at factor 0.625 = 320×240.
+  - Console attempt 1 (2026-11-19, rmxp3ds 10124ea, fork eba09cbc, kit SHA-256 d9611c41): the
+    system crashed at start, before any probe line (Luma3DS dump: data abort, `far=0xffffffff`,
+    in libiconv `iconv` ← `Encoding::convertString` ← `readConfFile` ← `Config::read`). The SD
+    card still had Essentials' own `mkxp.json` (ASCII plus "Pokémon" in UTF-8) instead of the
+    kit's. uchardet 0.0.8 guesses that text as `MAC-CENTRALEUROPE` (reproduced with a host build
+    of the same tarball); the devkitPro 3DS libiconv only has `MACCENTRALEUROPE` (`strings
+    libiconv.a`), so `iconv_open` returned `(iconv_t)-1` and `iconv()` wrote through it. Fix in the
+    fork (https://github.com/michvllni/mkxp-z-3ds/pull/8): on the 3DS, well-formed UTF-8 is
+    taken as is, and an unknown charset throws instead of crashing. The engine check's
+    `mkxp.json` now carries a UTF-8 title that uchardet misdetects the same way. The old runtime
+    times out with it in Azahar; the fixed one passes. Kit build 2 (SHA-256 db341025) tells the
+    user to replace the game's `mkxp.json` and to check its first line.
+  - Console attempt 2 (2026-11-19, kit 2, fork b29526e9): no crash, and the probe reported the
+    title: probe loaded, `IntroEventScene` hooked at 6.8 s, splashes at 13.6 s and 16.5 s, title
+    opened at 20.0 s, then 40.0 FPS over 240 frames. But the screen stayed **black** (maintainer).
+    Once the title closed (on input), Essentials stopped with a NoMethodError in `AnimatedBitmap`:
+    its first window got an empty path because Ruby's `FileTest` found no windowskin. In Azahar
+    every lookup works (`./` paths, spaces, `Dir.pwd` = `sdmc:/rmxp3ds/game`), and the snapshot
+    shows the title. Two open explanations: game files missing from the SD copy, or a console-only
+    drawing problem. Kit 3 tells them apart: the probe saves `Graphics.snap_to_bitmap`
+    (`realtitle-snap.png`, kept local) and logs `Dir.pwd`, how many entries each `Graphics/`
+    directory has, and `FileTest` on the windowskin. Both run after the measurement, because they
+    take seconds.
+  - Console attempt 3 (2026-11-19, kit 3 SHA-256 2314007f, rmxp3ds e4247d8, fork 43e7ae75):
+    the title was reported again (20.0 s, 40.0 FPS), and the snapshot was black. Cause: an
+    incomplete copy on the SD card. `Graphics/` held only Animations through Items, and Items had
+    310 of 449 files; Titles, Windowskins and the other later folders were missing. Essentials
+    skips images it can't find, which gives a black title and then the empty windowskin path.
+    Not a runtime bug. The full folder is 102 MB in 7606 files (6456 in `Graphics/`).
+  - Console attempt 4 (2026-11-19, kit 3, full fresh copy): the top screen stayed black and the
+    bottom screen showed only `game: sdmc:/rmxp3ds/game`. The system became very slow, and the
+    app was hard to close. After a long wait it crashed: a data abort in Ruby's compiler
+    (`iseq_peephole_optimize` ← `rb_iseq_compile_node` ← `yycompile0`, with `exec_hooks_protected`
+    from the probe's TracePoint on the stack; `far=0x2d5dac0d`, an invalid pointer). No probe log
+    was written. In Azahar the same full copy takes about 5 minutes of wall time before the scripts
+    start, nearly all in "Loading path cache": mkxp-z's `createPathCache` enumerates and stats
+    every file through PhysFS. With `"pathCache": false`, the run from start to title takes 38 s
+    and gives the same result (title after 24.3 s, 39.9 FPS). The SD card is FAT, so it matches
+    names without case anyway. `tools/title` now writes `"pathCache": false` (kit 4, SHA-256
+    02caae71). The compiler crash is still unexplained; candidates are heap exhaustion or
+    corruption after the long scan. Earlier Azahar "hangs" were timeouts that were too short
+    (100–200 s).
+- **Synthetic title screen (`tests/runtime/titlecheck`):** title image, command window with an
+  RGSS1-layout windowskin, entries and cursor, fades; all generated by `make-assets.rb`, built
+  from the RGSS API only (no RTP or game scripts). Passes in Azahar (7 checks).
+
 ## M2 findings (2026-11-18; console numbers: Measurements, hardware run 2)
 - **Approach (`tools/m2`):** a real game's scripts run headlessly. The game's `Data/Scripts.rxdata` is
   loaded section by section (all except "Main") into `rgss_headless.rb`. That file provides real data
@@ -186,9 +346,99 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   that thread with a large stack (SDL2 n3ds default: 80 KiB).
 - **Later:** Ruby thread preemption (timer without pipes); guard page + exception handler for deep C
   recursion.
+- **Backlog, upstream mkxp-z (on hold, maintainer decision 2026-11-18: no upstream traction for now):**
+  Hires scissor bug. `GLProperty::set` (`src/display/gl/glstate.h`) skips unchanged values, but
+  `GLScissorBox::apply` (`glstate.cpp`) scales the box when the ping-pong framebuffer is bound. A
+  bitmap `fill_rect` with the same logical box then keeps the scaled scissor (at factor 0.5 it
+  fills a quarter). The fork has a 3DS-only hook (fork PR https://github.com/michvllni/mkxp-z-3ds/pull/4).
+  Before reporting, confirm on a desktop build. mkxp-z has no written AI contribution policy
+  (checked the repo, wiki, org profile and issues; the community is on Discord): disclose AI
+  assistance if it is ever filed.
+  Charset guessing: `Encoding::convertString` (`src/util/encoding.h`) calls `iconv()` without
+  checking `iconv_open`, and uchardet guesses mostly ASCII UTF-8 text wrongly (names libiconv may
+  not know, or mojibake). The fork has a 3DS-only hook (fork PR
+  https://github.com/michvllni/mkxp-z-3ds/pull/8). Confirm on desktop before reporting.
 
 ## Measurements
 Console numbers only, with date, commits of both repos and settings.
+
+- **Commit note (2026-11-19):** fork https://github.com/michvllni/mkxp-z-3ds/pull/7, /8 and /6 were
+  squash-merged into `dev` (`2cb116f8`, `1265dcc7`, `29930935`). `29930935` has the same tree as
+  `43e7ae75`, the runtime in the Essentials title runs 2–5.
+- **Commit note:** after fork https://github.com/michvllni/mkxp-z-3ds/pull/5 was merged, the renderer
+  branches were rebased onto `dev`: `3855a84d` → `952f37f9`, `9c9e785e` → `46949580`,
+  `306dd26a` → `f81aa12a` (same changes).
+
+### 2026-11-18 · Hardware run 3, attempt 1 · New 3DS · M3 checks (`tools/hw3`)
+- **Commits:** rmxp3ds `9a7d5c6`, mkxp-z-3ds `3855a84d` (`feat/3ds-gl-effects`); settings: kit
+  defaults (Hires factor 0.5, RGSS1, frame rate 40).
+- **Result:** crash before any result file. Luma3DS exception dump: data abort (type 3) in
+  `3dsx_app`, DFSR 0x80d (permission fault on a write), FAR 0x1f300008 (VRAM bank B), PC in
+  `memcpy` called from the VRAM migration in gl3ds `currentTarget` while a Window was drawn
+  (symbolized against a rebuild of the kit's source).
+- **Cause:** the CPU cannot write VRAM on the console; Azahar allows it, so the emulator checks
+  could not catch it. Fixed in mkxp-z-3ds `9c9e785e` (GX texture copies, render targets move
+  back to linear memory before CPU access). Attempt 2 follows with the fixed kit.
+
+### 2026-11-18 · Hardware run 3, attempt 2 · New 3DS · M3 checks (`tools/hw3`)
+- **Commits:** rmxp3ds `5cc7d8f`, mkxp-z-3ds `9c9e785e`; kit defaults.
+- **Result:** crash before any result file, again while a Window was drawn. Luma3DS dump: data
+  abort, DFSR 0x5 (translation fault, read), FAR 0xc, PC in citro3d `C3D_TexBind` called from
+  gl3ds `emit` (binary identical to the kit, symbolized). The VRAM fix of attempt 1 got past
+  its crash site.
+- **Cause:** `C3D_TexBind(unit, NULL)` for units 1 and 2: citro3d 1.7.1 reads the texture's
+  type there (`texture.c` `C3D_TexBind` → `C3D_TexGetType`); NULL is only valid for unit 0.
+  Azahar reads 0 at address 0xc instead of faulting. Fixed in mkxp-z-3ds `5fa7b754` (a dummy
+  texture on unused units). An audit for further console-only faults then found a GX queue
+  overflow (more than 15 moves to VRAM in one frame panic in libctru `gxqueue.c`), eviction
+  copies not waited for, and empty scissor boxes covering the whole target; fixed in
+  `5f8fabe6`. Attempt 3 follows.
+
+### 2026-11-19 · Essentials title run, attempt 5 · New 3DS · M3 exit (`tools/title`) · PASS
+- **Commits:** rmxp3ds `75503ef` (kit 4, SHA-256 02caae71), mkxp-z-3ds `43e7ae75`
+  (`feat/3ds-gl-effects`, which includes fork PRs #7 and #8); game: Pokémon Essentials v21.1, a
+  full local copy on the SD card (never in the repo). Settings (`tools/title` mkxp.json): RGSS1,
+  Hires factor 0.625 (512×384 → 320×240), texture factor 1.0, `pathCache` false, title probe as
+  the preload script.
+- **Result:** `RMXP3DS_TEST realtitle PASS title_after=19.9s title_fps=40.0 frames=240`. Probe
+  log: `IntroEventScene` hooked at 6.75 s, splashes at 13.6 s and 16.5 s, title at 19.92 s. The
+  snapshot (`Graphics.snap_to_bitmap`, 512×384) shows the full title screen and matches the one
+  from Azahar. Ruby sees all 6456 files in `Graphics/`.
+- **Earlier attempts** (M3 findings, Essentials title screen): 1 crashed reading the game's own
+  `mkxp.json` (fork #8); 2 and 3 had an incomplete copy on the SD card; 4 took minutes in the path
+  cache and then crashed in Ruby's compiler (`3ds-results/title-attempt4/`, not reproduced since
+  the path cache is off).
+- Local logs: `3ds-results/kit-4/` (not in the repo).
+
+### 2026-11-18 · Hardware run 3, attempt 4 · New 3DS · M3 checks (`tools/hw3`) · PASS
+- **Commits:** rmxp3ds `4eafc0a`, mkxp-z-3ds `0c370c89` (`feat/3ds-gl-effects`, code of
+  `205732bc`); settings: kit defaults (RGSS1, Hires factor 0.5 → 320×240 pillarboxed, frame rate 40).
+- **Checks:** engine 15/15, render 27/27, title 7/7 (synthetic title screen), in one app start;
+  engine 1.2 s, render 9.9 s, title 8.2 s.
+- **Frame times, synthetic title scene** (title sprite 640×480, window with three entries and a
+  blinking cursor), 400 frames each:
+  - at 40 FPS: avg 24.98 ms (40.0 fps), median 24.97, p95 25.02, max 25.21 ms;
+  - uncapped target 120 FPS: avg 8.28 ms (120.7 fps), median 8.31, p95 8.34, max 8.37 ms, so
+    the scene's frame work fits in 8.3 ms (limited by the frame limiter, not the work).
+- **HOME and sleep:** 60 s window, 2037 frames; pauses of 8.2 s (HOME) and 0.9 s (lid), the app
+  continued and finished normally: the GPU lock (`205732bc`) holds.
+- Local logs: `3ds-results/hw3-attempt4/` (not in the repo).
+
+### 2026-11-18 · Hardware run 3, attempt 3 · New 3DS · M3 checks (`tools/hw3`)
+- **Commits:** rmxp3ds `9c73814`, mkxp-z-3ds `5f8fabe6`; kit defaults.
+- **Result:** the whole console froze (no input, HOME included), no Luma3DS dump, and no log:
+  the checks wrote their results only at the end of each check.
+- **Analysis:**
+  - Not the 3DSync freeze (https://github.com/vllni/3DSync/pull/81: `ptm:u`/`gsp::Lcd` held open
+    for the app's lifetime blocked the system). The runtime opens neither; `cfgu` is closed right
+    after use; `soc:U` is opened only when started via 3dslink.
+  - Likely cause: citro3d's APT hook (`base.c` `C3Di_AptEventHook`) runs on the main thread in
+    `aptMainLoop` and waits for/clears the GX queue on suspend, while the RGSS thread has a frame
+    open (the queue is stopped during a frame, libctru `gxCmdQueueWait` returns at once) and keeps
+    submitting GPU work after the app gave up the GPU. Not confirmed (no log of the stage).
+  - Fixed in mkxp-z-3ds `205732bc` (GPU lock: rendering pauses at a frame boundary for HOME and
+    sleep). Logging changed: every check and `tools/hw3` append each line at once
+    (`<name>-results.txt`, `hw3-log.txt`), so a crash or freeze keeps the log.
 
 ### 2026-11-18 · Hardware run 2 · New 3DS · M2 go/no-go benchmark
 - **Setup:**

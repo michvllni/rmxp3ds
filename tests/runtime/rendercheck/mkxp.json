@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// mkxp-z-3ds config (JSON5) for the render check: RGSS1, run rendercheck.rb.
+{
+  "rgssVersion": 1,
+  // rmxp3ds D15: render the game screen at 3DS height (640x480 -> 320x240), bitmaps at full size
+  "enableHires": true,
+  "framebufferScalingFactor": 0.5,
+  "textureScalingFactor": 1.0,
+  "customScript": "rendercheck.rb"
+}

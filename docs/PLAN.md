@@ -71,7 +71,7 @@ Each milestone has an exit criterion measured **on real hardware**.
 | M0 | Dev environment & CI | Dev container builds a hello-world `.3dsx`; it runs in headless Azahar inside the container (screenshot taken via mcp-azahar) and on the console via 3dslink; CI builds on every push |
 | M1 | CRuby on 3DS | `ruby -e`-equivalent runs a script from SD; Marshal load of an `.rxdata`; Ruby micro-benchmark numbers recorded |
 | M2 | Go/no-go benchmark | Run Essentials' battle damage calc + event interpreter loop headless on 3DS; extrapolate frame cost. **Decide whether to continue.** |
-| M3 | Minimal renderer | Sprite, Bitmap, Viewport, Window via citro3d; RMXP default title screen of a blank project |
+| M3 | Minimal renderer | Sprite, Bitmap, Viewport, Window via citro3d; the title screen of Pokémon Essentials v21.1 (local copy) on the console (DECISIONS D16; originally: RMXP default title screen of a blank project) |
 | M4 | Native Tilemap + dual-core | Vanilla Essentials demo walks around a map at ≥ 30 fps |
 | M5 | Converter v1 | Converts the Essentials demo end-to-end; package boots from SD |
 | M6 | Battles & audio | Wild battle in Essentials demo completes; BGM/SE play |

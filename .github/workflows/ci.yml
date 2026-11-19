@@ -103,6 +103,64 @@ jobs:
               [ -n "$digest" ] || { echo "no digest from the host run" >&2; exit 1; }
               tools/m2/m2.sh azahar --game build/m2/synthetic-game --bench synthetic \
                 --env "EXPECT_DIGEST=$digest" --env REQUIRE_DIGEST=1 --timeout 300'
+      # M3: SDL2 utility libraries for the 3DS (runtime/3ds/deps) and their test app.
+      - name: Build SDL2 libraries for 3DS and tools/sdlcheck (.3dsx)
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspaces/rmxp3ds" -w /workspaces/rmxp3ds rmxp3ds-dev:ci bash -c '
+              set -euo pipefail
+              runtime/3ds/deps/build.sh --jobs "$(nproc)"
+              cmake -S tools/sdlcheck -B build/sdlcheck -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake"
+              cmake --build build/sdlcheck'
+      - name: Azahar SDL2 libraries test
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspaces/rmxp3ds" -w /workspaces/rmxp3ds rmxp3ds-dev:ci \
+            tests/smoke/azahar-smoke.sh --3dsx build/sdlcheck/sdlcheck.3dsx \
+              --result rmxp3ds/test/sdlcheck.txt --expect '^RMXP3DS_TEST sdlcheck PASS' \
+              --timeout 300 --screenshot build/sdlcheck-smoke.png
+      # M3: the runtime itself (mkxp-z for the 3DS, runtime/3ds) with an engine-check script.
+      - name: Build mkxp-z for 3DS (.3dsx)
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspaces/rmxp3ds" -w /workspaces/rmxp3ds rmxp3ds-dev:ci bash -c '
+              set -euo pipefail
+              cmake -S runtime/3ds -B runtime/build-3ds/mkxp -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake"
+              cmake --build runtime/build-3ds/mkxp'
+      - name: Azahar runtime engine check
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspaces/rmxp3ds" -w /workspaces/rmxp3ds rmxp3ds-dev:ci \
+            tests/smoke/azahar-smoke.sh --3dsx runtime/build-3ds/mkxp/mkxp-z.3dsx \
+              --result rmxp3ds/test/mkxp.txt --expect '^RMXP3DS_TEST mkxp PASS' \
+              --sd-file tests/runtime/enginecheck/mkxp.json=rmxp3ds/game/mkxp.json \
+              --sd-file tests/runtime/enginecheck/enginecheck.rb=rmxp3ds/game/enginecheck.rb \
+              --timeout 300 --screenshot build/mkxp-smoke.png
+      - name: Azahar runtime render check
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspaces/rmxp3ds" -w /workspaces/rmxp3ds rmxp3ds-dev:ci \
+            bash -c 'set -euo pipefail
+              ruby tests/runtime/rendercheck/make-transmap.rb --out build/trans-map.png
+              tests/smoke/azahar-smoke.sh --3dsx runtime/build-3ds/mkxp/mkxp-z.3dsx \
+                --result rmxp3ds/test/render.txt --expect "^RMXP3DS_TEST render PASS" \
+                --sd-file tests/runtime/rendercheck/mkxp.json=rmxp3ds/game/mkxp.json \
+                --sd-file tests/runtime/rendercheck/rendercheck.rb=rmxp3ds/game/rendercheck.rb \
+                --sd-file build/trans-map.png=rmxp3ds/game/trans-map.png \
+                --timeout 300 --screenshot build/render-smoke.png'
+      - name: Azahar runtime title check
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspaces/rmxp3ds" -w /workspaces/rmxp3ds rmxp3ds-dev:ci \
+            bash -c 'set -euo pipefail
+              ruby tests/runtime/titlecheck/make-assets.rb --out-dir build/titlecheck
+              tests/smoke/azahar-smoke.sh --3dsx runtime/build-3ds/mkxp/mkxp-z.3dsx \
+                --result rmxp3ds/test/title.txt --expect "^RMXP3DS_TEST title PASS" \
+                --sd-file tests/runtime/titlecheck/mkxp.json=rmxp3ds/game/mkxp.json \
+                --sd-file tests/runtime/titlecheck/titlecheck.rb=rmxp3ds/game/titlecheck.rb \
+                --sd-file build/titlecheck/title.png=rmxp3ds/game/Graphics/Titles/title.png \
+                --sd-file build/titlecheck/windowskin.png=rmxp3ds/game/Graphics/Windowskins/windowskin.png \
+                --timeout 300 --screenshot build/title-smoke.png'
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -113,5 +171,11 @@ jobs:
             build/hello-smoke.png
             build/bench/bench.3dsx
             build/bench-smoke.png
+            build/sdlcheck/sdlcheck.3dsx
+            build/sdlcheck-smoke.png
+            runtime/build-3ds/mkxp/mkxp-z.3dsx
+            build/mkxp-smoke.png
+            build/render-smoke.png
+            build/title-smoke.png
           if-no-files-found: ignore
           retention-days: 14

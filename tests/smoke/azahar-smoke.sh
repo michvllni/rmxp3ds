@@ -4,7 +4,7 @@
 # SYNOPSIS
 #   tests/smoke/azahar-smoke.sh --3dsx FILE --result PATH --expect REGEX
 #                               [--timeout SEC] [--screenshot PNG] [--display :N] [--keep-home]
-#                               [--sd-file SRC=DEST]...
+#                               [--sd-file SRC=DEST]... [--sd-dir SRC=DEST]...
 #
 # DESCRIPTION
 #   Runs a self-reporting .3dsx in headless Azahar (azahar-headless) and checks its result file.
@@ -27,6 +27,9 @@
 #   --display :N       X display (default: the first free one from :100; an existing X server on
 #                      the given display is reused and not stopped)
 #   --keep-home        keep the temporary HOME (Azahar logs, virtual SD) and print its path
+#   --sd-dir SRC=DEST  copy directory SRC (recursively) to DEST on the virtual SD card (DEST
+#                      relative to its root, e.g. rmxp3ds/game); --sd-file copies come after it,
+#                      so they can replace single files; repeatable
 #   --sd-file SRC=DEST copy file SRC to DEST on the virtual SD card (DEST relative to its root,
 #                      e.g. rmxp3ds/test/bench.rb); repeatable
 #   -h, --help         show this help
@@ -43,6 +46,7 @@ usage() {
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 FILE="" RESULT="" EXPECT="" TIMEOUT=120 SHOT="" KEEP=0
 SD_FILES=()
+SD_DIRS=()
 DISPLAY_NUM=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -57,6 +61,11 @@ while [ $# -gt 0 ]; do
       case "${2:-}" in
         ?*=?*) SD_FILES+=("$2"); shift 2 ;;
         *) echo "azahar-smoke.sh: --sd-file needs SRC=DEST" >&2; exit 2 ;;
+      esac ;;
+    --sd-dir)
+      case "${2:-}" in
+        ?*=?*) SD_DIRS+=("$2"); shift 2 ;;
+        *) echo "azahar-smoke.sh: --sd-dir needs SRC=DEST" >&2; exit 2 ;;
       esac ;;
     -h|--help) usage; exit 0 ;;
     *) echo "azahar-smoke.sh: unknown argument: $1" >&2; usage >&2; exit 2 ;;
@@ -89,11 +98,18 @@ claim_display() {
 
 # Validate --sd-file before creating anything (an error exit leaves no temporary HOME behind).
 for spec in "${SD_FILES[@]}"; do
-  src="${spec%%=*}" dest="${spec#*=}"
+  src="${spec%=*}" dest="${spec##*=}"
   case "/$dest/" in
     //*|*/../*|*//|/./) echo "azahar-smoke.sh: --sd-file DEST must be a relative file path without '..': $dest" >&2; exit 2 ;;
   esac
   [ -f "$src" ] || { echo "azahar-smoke.sh: --sd-file source $src not found" >&2; exit 2; }
+done
+for spec in "${SD_DIRS[@]}"; do
+  src="${spec%=*}" dest="${spec##*=}"
+  case "/$dest/" in
+    //*|*/../*|*//|/./) echo "azahar-smoke.sh: --sd-dir DEST must be a relative path without '..': $dest" >&2; exit 2 ;;
+  esac
+  [ -d "$src" ] || { echo "azahar-smoke.sh: --sd-dir source $src not found" >&2; exit 2; }
 done
 
 PGID=""
@@ -120,8 +136,13 @@ AZ_HOME="$(mktemp -d)"
 SDMC="$AZ_HOME/.local/share/azahar-emu/sdmc"
 mkdir -p "$SDMC/rmxp3ds/test"
 : >"$SDMC/rmxp3ds/test/autoexit"
+for spec in "${SD_DIRS[@]}"; do
+  src="${spec%=*}" dest="${spec##*=}"
+  mkdir -p "$SDMC/$dest"
+  cp -R "$src/." "$SDMC/$dest/"
+done
 for spec in "${SD_FILES[@]}"; do
-  src="${spec%%=*}" dest="${spec#*=}"
+  src="${spec%=*}" dest="${spec##*=}"
   mkdir -p "$(dirname "$SDMC/$dest")"
   cp "$src" "$SDMC/$dest"
 done
