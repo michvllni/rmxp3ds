@@ -4,6 +4,8 @@
 # game's scripts define a known title scene class; the probe then hooks the method that opens the
 # title and the title's per-frame update, and after HOLD frames on the title writes
 #   sdmc:/rmxp3ds/test/realtitle.txt   RMXP3DS_TEST realtitle PASS title_after=... title_fps=...
+# and a snapshot of the screen (realtitle-snap.png; game content: keep it out of the repo). When the
+# result is written it also logs which game files Ruby can see.
 # Every step is appended to sdmc:/rmxp3ds/test/realtitle-log.txt at once (file closed each time),
 # so a crash or freeze keeps the log. Known title scenes: Pokémon Essentials v21
 # (IntroEventScene#open_title_screen, #title_screen_update) and the RPG Maker XP default scripts
@@ -12,6 +14,7 @@
 module RMXP3DSTitleProbe
   LOG = 'sdmc:/rmxp3ds/test/realtitle-log.txt'
   RESULT = 'sdmc:/rmxp3ds/test/realtitle.txt'
+  SNAP = 'sdmc:/rmxp3ds/test/realtitle-snap.png' # the game's screen: stays local, never committed
   HOLD = 240 # frames on the title screen before reporting
 
   @t0 = System.uptime
@@ -43,6 +46,33 @@ module RMXP3DSTitleProbe
                     @title_at - @t0, fps, @frames)
       log(line)
       File.write(RESULT, line + "\n")
+      snapshot # after the measurement: both take seconds
+      files
+    end
+
+    # Logs what the game sees of its own files: Dir.pwd, entries per Graphics subdirectory and
+    # Ruby's FileTest on the files Essentials' first window needs (a missing copy on the SD card
+    # shows as a black title and a nil path later).
+    def files
+      log("pwd=#{Dir.pwd} Game.ini=#{FileTest.exist?('Game.ini')}")
+      dirs = Dir.exist?('Graphics') ? Dir.children('Graphics').sort : []
+      log('Graphics: ' + dirs.map { |d| "#{d}=#{Dir.exist?("Graphics/#{d}") ? Dir.children("Graphics/#{d}").size : '-'}" }.join(' '))
+      ['./Graphics/Windowskins/choice 1.png', 'Graphics/Windowskins/choice 1.png'].each do |f|
+        log("#{f}: exist=#{FileTest.exist?(f)}")
+      end
+    rescue StandardError => e
+      log("files: #{e.class}: #{e.message}")
+    end
+
+    # Saves what the game drew (Graphics.snap_to_bitmap) to SNAP, to tell a drawing problem
+    # from missing images.
+    def snapshot
+      snap = Graphics.snap_to_bitmap
+      snap.to_file(SNAP)
+      log("snapshot #{snap.width}x#{snap.height} -> #{SNAP}")
+      snap.dispose
+    rescue StandardError => e
+      log("snapshot: #{e.class}: #{e.message}")
     end
 
     # Prepends mod to klass (once), called when the game closes the class's definition.
