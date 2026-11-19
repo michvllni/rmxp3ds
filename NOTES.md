@@ -8,7 +8,8 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   screen on the New 3DS. The title opens 19.9 s after start and runs at 40.0 FPS; the snapshot
   matches Azahar's (Measurements, Essentials title run attempt 5). The runtime is fork `dev`
   `29930935`. M4 started: map baseline tool, Ruby compiler crash fixed (fork Ruby patch 0006), native map
-  renderer drawing Essentials maps (D17; M4 findings). Next: console run, dual-core.
+  renderer drawing Essentials maps (D17; M4 findings). Console map run 1: 26.7 FPS on Route 5,
+  32.9 FPS on Route 3 (Measurements). Next: dual-core rendering.
 - **2026-11-18:** M3 in progress: SDL2 utility libraries for the 3DS (fork `3ds/deps`, test app
   `tools/sdlcheck`); mkxp-z runs on the 3DS with the citro3d renderer (D14, D15): engine, render
   (27 checks) and synthetic title screen checks pass in Azahar and on the New 3DS (hardware run
@@ -469,6 +470,30 @@ Console numbers only, with date, commits of both repos and settings.
   overflow (more than 15 moves to VRAM in one frame panic in libctru `gxqueue.c`), eviction
   copies not waited for, and empty scissor boxes covering the whole target; fixed in
   `5f8fabe6`. Attempt 3 follows.
+
+### 2026-11-19 · Essentials map run 1 · New 3DS · M4 (`tools/title --scene map`, native map renderer)
+- **Commits:** kit from rmxp3ds `d8d1e5a` and mkxp-z-3ds `510a9c66` (`feat/3ds-tilemap-renderer`
+  on top of fork PR 9), kit SHA-256 `1b959ffa…`; game: the Pokémon Essentials v21.1 demo, a
+  local copy. Settings: RGSS1, Hires factor 0.625, `pathCache` false, frame rate 40 (the game's
+  default), preload scripts `patches/essentials-v21/tilemap_renderer.rb` then the map probe.
+  Debug walk in a square, 60 frames to settle, then 600 measured frames per map.
+- **Results:**
+
+  | Map | FPS | Frame avg / p50 / p95 / max | `Scene_Map#update` avg / p95 | GC runs |
+  |---|---|---|---|---|
+  | Route 5 (map 41, 96 events) | 26.7 | 37.5 / 36.6 / 38.4 / 308 ms | 28.9 / 30.0 ms | 8 |
+  | Route 3 (map 31, 30 events) | 32.9 | 30.4 / 29.2 / 33.4 / 269 ms | 23.3 / 26.5 ms | 6 |
+
+  - The snapshots show both maps fully drawn, with the day/night tint, the same as Azahar.
+  - The game reached the map 13.4 s after start, with scripts and the new game loaded.
+- **Reading:**
+  - The frame is Ruby (`Scene_Map#update`: game logic plus Essentials' sprite updates) followed
+    by drawing and presenting (about 7–8.5 ms), on one core.
+  - The single frames of 270–310 ms coincide with the map setup and GC runs (to be confirmed).
+  - The M4 exit (≥ 30 FPS) is met on Route 3 and is 11% short on Route 5.
+  - Next: render on the second core (PLAN §2 threading model), so that Ruby and drawing
+    overlap, then profile the Ruby side.
+- Local logs and snapshots: `3ds-results/map-run1/` (not in the repo).
 
 ### 2026-11-19 · Essentials title run, attempt 5 · New 3DS · M3 exit (`tools/title`) · PASS
 - **Commits:** rmxp3ds `75503ef` (kit 4, SHA-256 02caae71), mkxp-z-3ds `43e7ae75`
