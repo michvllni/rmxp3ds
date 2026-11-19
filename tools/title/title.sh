@@ -10,7 +10,7 @@
 #   Runs a local RPG Maker XP game (never part of this repository) in the 3DS runtime until its
 #   title screen, for the M3 exit (docs/DECISIONS.md D16). The game directory is copied as is;
 #   two files are added in the copy: mkxp.json (RGSS1, the game screen scaled to 3DS height,
-#   docs/DECISIONS.md D15) and the probe tools/title/title_probe.rb (an mkxp-z preloadScript that
+#   docs/DECISIONS.md D15, no path cache) and the probe tools/title/title_probe.rb (an mkxp-z preloadScript that
 #   reports when the title screen is up: sdmc:/rmxp3ds/test/realtitle.txt, step log
 #   realtitle-log.txt). The game's own mkxp.json is replaced in the copy only.
 #     azahar  runs it in headless Azahar (tests/smoke/azahar-smoke.sh); passes when the probe
@@ -84,6 +84,9 @@ cat > "$WORK/mkxp.json" <<JSON
   "enableHires": true,
   "framebufferScalingFactor": $FACTOR,
   "textureScalingFactor": 1.0,
+  // no path cache: the 3DS SD card (FAT) already matches names without case, and listing all
+  // of Essentials' 7606 files took minutes at start (NOTES.md M3, console attempt 4)
+  "pathCache": false,
   "preloadScript": ["rmxp3ds_title_probe.rb"]
 }
 JSON
