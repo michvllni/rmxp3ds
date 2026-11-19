@@ -44,7 +44,14 @@ begin
   tm = Tilemap.new(vp); tm.tileset = Bitmap.new(256, 4096); tm.map_data = Table.new(20, 15, 3)
   check.call('tilemap_big_tileset', tm.tileset.height == 4096)
   tm.dispose
-  Graphics.play_movie('missing.ogv') rescue check.call('play_movie', false, $!.message)
+  # movies are left out on the 3DS: play_movie logs and returns, even for a missing file
+  movie = begin
+    Graphics.play_movie('missing.ogv')
+    nil
+  rescue StandardError => e
+    e.message
+  end
+  check.call('play_movie', movie.nil?, movie || 'returned')
   check.call('controller_name', Input::Controller.name == 'Nintendo 3DS', Input::Controller.name.inspect)
   dd = System.data_directory
   check.call('data_directory', dd.end_with?('/'), dd)

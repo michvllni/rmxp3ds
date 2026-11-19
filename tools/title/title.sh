@@ -58,7 +58,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --game) GAME="$(realpath "${2:?--game needs a value}")"; shift 2 ;;
     --height) HEIGHT="${2:?--height needs a value}"; shift 2 ;;
-    --3dsx) APP="$(realpath "${2:?--3dsx needs a value}")"; shift 2 ;;
+    --3dsx) APP="$(realpath -m "${2:?--3dsx needs a value}")"; shift 2 ;;
     --timeout) TIMEOUT="${2:?--timeout needs a value}"; shift 2 ;;
     --screenshot) SHOT="$(realpath -m "${2:?--screenshot needs a value}")"; shift 2 ;;
     --keep-home) KEEP=(--keep-home); shift ;;
@@ -68,10 +68,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 [ "$MODE" = kit ] || [ -f "$GAME/Game.ini" ] || { echo "title.sh: no Game.ini in --game DIR" >&2; exit 2; }
-case "$HEIGHT" in ''|*[!0-9]*) echo "title.sh: --height must be a number" >&2; exit 2 ;; esac
+case "$HEIGHT" in ''|*[!0-9]*|0*) echo "title.sh: --height must be a positive number" >&2; exit 2 ;; esac
 [ -f "$APP" ] || { echo "title.sh: $APP missing (build the runtime first, see AGENTS.md)" >&2; exit 1; }
 [ "$MODE" = azahar ] || [ -n "$OUT" ] || { echo "title.sh: kit needs --out DIR" >&2; exit 2; }
-case "$OUT" in "$REPO"/build/*|"") ;; "$REPO"/*) echo "title.sh: --out inside the repository must be under build/ (ignored by git)" >&2; exit 2 ;; esac
+case "$OUT" in "$REPO"/build|"$REPO"/build/*|"") ;; "$REPO"|"$REPO"/*) echo "title.sh: --out inside the repository must be under build/ (ignored by git)" >&2; exit 2 ;; esac
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT

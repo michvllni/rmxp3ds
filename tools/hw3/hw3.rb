@@ -88,7 +88,11 @@ if hold > 0
   log.call("hold: #{frames} frames in #{hold} s; pauses > 0.5 s: #{gaps.empty? ? 'none' : gaps.join(', ')}")
 end
 
-passed = out.count { |l| l.include?(' PASS ') }
+# one result file per check, written by the check itself
+passed = CHECKS.values.count do |n|
+  r = "sdmc:/rmxp3ds/test/#{n}.txt"
+  File.exist?(r) && File.read(r).match?(/^RMXP3DS_TEST #{n} PASS/)
+end
 line = "RMXP3DS_TEST hw3 #{passed == 3 ? 'PASS' : 'FAIL'} checks_passed=#{passed}/3\n"
 File.write('sdmc:/rmxp3ds/test/hw3.txt', line + out.join("\n") + "\n")
 say.call("hw3: done (#{passed}/3 checks passed). Results: sdmc:/rmxp3ds/test/hw3.txt")

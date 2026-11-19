@@ -3,7 +3,7 @@
 # when a game reaches its title screen, without changing the game. A TracePoint notices when the
 # game's scripts define a known title scene class; the probe then hooks the method that opens the
 # title and the title's per-frame update, and after HOLD frames on the title writes
-#   sdmc:/rmxp3ds/test/realtitle.txt   RMXP3DS_TEST realtitle PASS title_after=... title_fps=...
+#   sdmc:/rmxp3ds/test/realtitle.txt   RMXP3DS_TEST realtitle PASS title_after=... title_fps=... title_frames=240
 # and a snapshot of the screen (realtitle-snap.png; game content: keep it out of the repo). When the
 # result is written it also logs which game files Ruby can see.
 # Every step is appended to sdmc:/rmxp3ds/test/realtitle-log.txt at once (file closed each time),
@@ -18,7 +18,6 @@ module RMXP3DSTitleProbe
   HOLD = 240 # frames on the title screen before reporting
 
   @t0 = System.uptime
-  @frames = 0
   @hooked = {}
   @title_at = nil
   @title_frames = 0
@@ -34,7 +33,6 @@ module RMXP3DSTitleProbe
 
     # Called once per frame on the title screen.
     def tick
-      @frames += 1
       return unless @title_at && !@done
 
       @title_frames += 1
@@ -42,8 +40,8 @@ module RMXP3DSTitleProbe
 
       @done = true
       fps = HOLD / (System.uptime - @title_at)
-      line = format('RMXP3DS_TEST realtitle PASS title_after=%.1fs title_fps=%.1f frames=%d',
-                    @title_at - @t0, fps, @frames)
+      line = format('RMXP3DS_TEST realtitle PASS title_after=%.1fs title_fps=%.1f title_frames=%d',
+                    @title_at - @t0, fps, HOLD)
       log(line)
       File.write(RESULT, line + "\n")
       snapshot # after the measurement: both take seconds
@@ -82,6 +80,7 @@ module RMXP3DSTitleProbe
       klass.prepend(mod)
       @hooked[klass] = true
       log("#{klass.name} hooked")
+      TRACE.disable # one title scene per game: no more tracing of class definitions
     end
 
     def class_defined(klass)
@@ -121,6 +120,8 @@ module RMXP3DSTitleProbe
 
   # RPG Maker XP default scripts: Scene_Title#main draws the title and loops until a choice.
   module RmxpHook
+    # The title time starts here, before main loads the title images, so title_fps is a bit low
+    # for RMXP games (Essentials' hook is after open_title_screen).
     def main(*args)
       RMXP3DSTitleProbe.title_opened('Scene_Title#main')
       super

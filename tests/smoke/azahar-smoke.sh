@@ -98,14 +98,14 @@ claim_display() {
 
 # Validate --sd-file before creating anything (an error exit leaves no temporary HOME behind).
 for spec in "${SD_FILES[@]}"; do
-  src="${spec%%=*}" dest="${spec#*=}"
+  src="${spec%=*}" dest="${spec##*=}"
   case "/$dest/" in
     //*|*/../*|*//|/./) echo "azahar-smoke.sh: --sd-file DEST must be a relative file path without '..': $dest" >&2; exit 2 ;;
   esac
   [ -f "$src" ] || { echo "azahar-smoke.sh: --sd-file source $src not found" >&2; exit 2; }
 done
 for spec in "${SD_DIRS[@]}"; do
-  src="${spec%%=*}" dest="${spec#*=}"
+  src="${spec%=*}" dest="${spec##*=}"
   case "/$dest/" in
     //*|*/../*|*//|/./) echo "azahar-smoke.sh: --sd-dir DEST must be a relative path without '..': $dest" >&2; exit 2 ;;
   esac
@@ -137,12 +137,12 @@ SDMC="$AZ_HOME/.local/share/azahar-emu/sdmc"
 mkdir -p "$SDMC/rmxp3ds/test"
 : >"$SDMC/rmxp3ds/test/autoexit"
 for spec in "${SD_DIRS[@]}"; do
-  src="${spec%%=*}" dest="${spec#*=}"
+  src="${spec%=*}" dest="${spec##*=}"
   mkdir -p "$SDMC/$dest"
   cp -R "$src/." "$SDMC/$dest/"
 done
 for spec in "${SD_FILES[@]}"; do
-  src="${spec%%=*}" dest="${spec#*=}"
+  src="${spec%=*}" dest="${spec##*=}"
   mkdir -p "$(dirname "$SDMC/$dest")"
   cp "$src" "$SDMC/$dest"
 done

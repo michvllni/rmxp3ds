@@ -67,10 +67,19 @@ begin
   log_line.call('stage fade out')
   # fade out to black
   Graphics.freeze
-  objs.each { |o| o.bitmap.dispose if o.respond_to?(:bitmap) && o.bitmap; o.dispose }
+  objs.each do |o|
+    o.bitmap.dispose if o.respond_to?(:bitmap) && o.bitmap
+    if o.is_a?(Window)
+      o.windowskin&.dispose
+      o.contents&.dispose
+    end
+    o.dispose
+  end
   Graphics.transition(20)
   shot = Graphics.snap_to_bitmap
-  check.call('fade_out', rgb.call(shot.get_pixel(320, 240)) == [0, 0, 0], rgb.call(shot.get_pixel(320, 240)).inspect)
+  # size checked too: get_pixel outside a smaller snapshot also reads black
+  check.call('fade_out', shot.width == 640 && rgb.call(shot.get_pixel(320, 240)) == [0, 0, 0],
+             "#{shot.width}x#{shot.height} #{rgb.call(shot.get_pixel(320, 240)).inspect}")
   shot.dispose
   log_line.call('stage fade in')
   # back in for the screenshot

@@ -50,7 +50,7 @@ KEEP=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --out) OUT="$(realpath -m "${2:?--out needs a value}")"; shift 2 ;;
-    --3dsx) APP="$(realpath "${2:?--3dsx needs a value}")"; shift 2 ;;
+    --3dsx) APP="$(realpath -m "${2:?--3dsx needs a value}")"; shift 2 ;;
     --hold) HOLD="${2:?--hold needs a value}"; shift 2 ;;
     --timeout) TIMEOUT="${2:?--timeout needs a value}"; shift 2 ;;
     --keep-home) KEEP=(--keep-home); shift ;;
@@ -60,6 +60,8 @@ while [ $# -gt 0 ]; do
 done
 [ -f "$APP" ] || { echo "hw3.sh: $APP missing (build the runtime first, see AGENTS.md)" >&2; exit 1; }
 [ "$MODE" = azahar ] || [ -n "$OUT" ] || { echo "hw3.sh: kit needs --out DIR" >&2; exit 2; }
+case "$HOLD" in ''|*[!0-9]*) echo "hw3.sh: --hold must be a number of seconds" >&2; exit 2 ;; esac
+case "$OUT" in "$REPO"/build|"$REPO"/build/*|"") ;; "$REPO"|"$REPO"/*) echo "hw3.sh: --out inside the repository must be under build/ (ignored by git)" >&2; exit 2 ;; esac
 
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
