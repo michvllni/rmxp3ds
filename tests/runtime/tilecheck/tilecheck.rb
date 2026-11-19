@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 # Tile check for the 3DS runtime (mkxp-z-3ds, run as customScript): drives the native map
 # renderer RMXP3DSTileRenderer (docs/DECISIONS.md D17) with synthetic images from
-# make-assets.rb (Graphics/Tilesets/tileset.png 256x1088, Graphics/Autotiles/autotile.png and
-# single.png) and a synthetic map, then reads the screen back with Graphics.snap_to_bitmap:
-# tileset tiles (also beyond 1024 px in the source), block and single-tile autotiles and their
-# frames, layer order, priorities and reflective tiles against sprites by z, scrolling, empty
-# cells outside the map and tone. Result in sdmc:/rmxp3ds/test/tile.txt (details
-# tile-results.txt).
+# make-assets.rb (Graphics/Tilesets/tileset.png 256x1100, Graphics/Autotiles/autotile.png,
+# single.png and autotile192.png) and synthetic maps, then reads the screen back with
+# Graphics.snap_to_bitmap: tileset tiles (also beyond 1024 px in the source, and a partial last
+# row), block, single-tile and Essentials' 192 px autotiles and their frames, layer order,
+# priorities, bridges and reflective tiles against sprites by z, a later map overwriting with
+# blank tiles, scrolling, empty cells outside the map, tone, a tileset disposed while in use,
+# and use after dispose. Result in sdmc:/rmxp3ds/test/tile.txt (details tile-results.txt).
 results = []
 Dir.mkdir('sdmc:/rmxp3ds/test') unless Dir.exist?('sdmc:/rmxp3ds/test')
 log_path = 'sdmc:/rmxp3ds/test/tile-results.txt'
@@ -56,7 +57,8 @@ begin
   data[10, 5, 1] = TS + 100  # priority 0 on layer 1 over layer 0
   data[4, 3, 0] = 96 + 1     # 192 px autotile (slot 1), sub-tile 1 stored whole
   data[12, 5, 1] = TS + 70   # priority 1 and bridge: z 0 while a bridge is active
-  flags = Table.new(TS + 272)
+  data[13, 6, 0] = TS + 272  # partial last tileset row (12 px of 32)
+  flags = Table.new(TS + 280)
   flags[TS + 50] = 1         # priority 1
   flags[TS + 60] = 8         # shows reflections
   flags[TS + 70] = 1 | 16    # priority 1, bridge
@@ -118,6 +120,8 @@ begin
     check.call('ground_over_sprite', near.call(c, tile_color.call(n_at.call(9, 5))), c.inspect)
     c = px.call(10 * 32 + 16, 5 * 32 + 16)
     check.call('layer1_over_layer0', near.call(c, tile_color.call(100)), c.inspect)
+    c = px.call(13 * 32 + 16, 6 * 32 + 4)
+    check.call('partial_last_row', near.call(c, tile_color.call(272)), c.inspect)
     c = px.call(19 * 32 + 16, 1 * 32 + 16)
     check.call('outside_map_empty', near.call(c, [0, 0, 0]), c.inspect)
   end
@@ -157,10 +161,20 @@ begin
   r.tone = Tone.new(0, 0, 0)
   r.update([map], 0, 0, false, 0.0)
 
-  r.remove_source(h_ts)
+  # the tileset bitmap is read in place: disposing it while in use makes tiles not yet in the
+  # atlas draw blank (no read of freed memory); tiles already uploaded stay
   ts.dispose
+  data[14, 8, 0] = TS + 200 # never drawn before
+  r.update([map], 0, 0, false, 0.0)
+  snap.call do |px|
+    c = px.call(14 * 32 + 16, 8 * 32 + 16)
+    check.call('disposed_source_blank', near.call(c, [0, 0, 0]), c.inspect)
+    c = px.call(1 * 32 + 16, 1 * 32 + 16)
+    check.call('disposed_source_uploaded_tiles', near.call(c, tile_color.call(n_at.call(1, 1))), c.inspect)
+  end
+  r.remove_source(h_ts)
   r.dispose
-  check.call('dispose', r.disposed?)
+  check.call('dispose', r.disposed? && r.frame_count(h_at) == 0)
   after = begin
     r.add_source(Bitmap.new(32, 32), 1, 0.25)
     'accepted'

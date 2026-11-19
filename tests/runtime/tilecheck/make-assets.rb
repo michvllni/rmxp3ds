@@ -7,7 +7,8 @@
 # DESCRIPTION
 #   Writes the synthetic images of the tile check (native map renderer, docs/DECISIONS.md D17;
 #   no game or RTP content):
-#     DIR/tileset.png   256x1088 RGBA, 8x34 tiles of 32x32; tile n (row-major) is solid
+#     DIR/tileset.png   256x1100 RGBA, 8 tiles of 32x32 per row (34 full rows and a partial
+#                       12 px row); tile n (row-major) is solid
 #                       [(n % 16) * 16 + 8, (n / 16) * 12 + 8, 200, 255]. Taller than 1024 px,
 #                       so the runtime keeps it as a CPU "mega" bitmap.
 #     DIR/autotile.png  192x128 RGBA, an RMXP block autotile with 2 frames of 96x128; the 16x16
@@ -66,7 +67,7 @@ def write_png(path, width, height)
 end
 
 FileUtils.mkdir_p(out_dir)
-write_png(File.join(out_dir, 'tileset.png'), 256, 1088) do |x, y|
+write_png(File.join(out_dir, 'tileset.png'), 256, 1100) do |x, y|
   n = (y / 32) * 8 + (x / 32)
   [(n % 16) * 16 + 8, (n / 16) * 12 + 8, 200, 255]
 end

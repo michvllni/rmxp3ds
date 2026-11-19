@@ -18,7 +18,7 @@ module RMXP3DS
       @viewport = viewport
       @native = RMXP3DSTileRenderer.new(viewport)
       @t0 = System.uptime
-      @sources = {} # [kind, name] => [handle, references]
+      @sources = {} # [kind, name] => [handle, references, owned mega bitmap or nil]
       @flags = {}   # tileset id => Table of per-tile-id flags
       @ox = @oy = 0
       @visible = true
@@ -95,25 +95,29 @@ module RMXP3DS
       bitmap, own = load_bitmap(kind, name)
       seconds = AUTOTILE_SECONDS
       seconds = Regexp.last_match(1).to_i / 20.0 if kind == :autotile && name[/\[\s*(\d+)\s*\]\s*$/]
-      handle = @native.add_source(bitmap, kind == :tileset ? 0 : 1, seconds)
+      begin
+        handle = @native.add_source(bitmap, kind == :tileset ? 0 : 1, seconds)
+      rescue StandardError, MKXPError
+        bitmap.dispose if own
+        raise
+      end
       keep = own && bitmap.mega? # read in place by the native side: alive until released
       bitmap.dispose if own && !keep
       @sources[key] = [handle, 1, keep ? bitmap : nil]
     end
 
-    # Returns [bitmap, owned]. Tall images (above 1024 px) become CPU "mega" bitmaps that the
-    # native renderer reads in place, so they are loaded uncached and owned here. Other autotiles
-    # come from RPG::Cache (copied by the native side, left to the cache). A missing tileset
-    # gives a blank bitmap, like Essentials' loader.
+    # Returns [bitmap, owned]. Images are loaded uncached and owned here: the native side copies
+    # small ones, and reads tall ones (above 1024 px, CPU "mega" bitmaps) in place until they are
+    # released. Autotile names starting with "[N]" keep Essentials' loader (it keeps the first of
+    # N strips; cached, left to the cache). A missing or unreadable image gives a blank bitmap,
+    # like Essentials' loader.
     def load_bitmap(kind, name)
-      if kind == :autotile
-        bitmap = pbGetAutotile(name)
-        return [bitmap, false] if !bitmap.mega?
+      return [pbGetAutotile(name), false] if kind == :autotile && name.start_with?('[')
 
-        return [Bitmap.new("Graphics/Autotiles/" + name), true]
-      end
-      [Bitmap.new("Graphics/Tilesets/" + name), true]
-    rescue StandardError, MKXPError
+      dir = (kind == :tileset) ? 'Graphics/Tilesets/' : 'Graphics/Autotiles/'
+      [Bitmap.new(dir + name), true]
+    rescue StandardError, MKXPError, SDLError, PHYSFSError => e
+      $stderr.puts("rmxp3ds tilemap: #{kind} #{name}: #{e.class}: #{e.message}")
       [Bitmap.new(32, 32), true]
     end
 
