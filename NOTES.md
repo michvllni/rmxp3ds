@@ -495,10 +495,19 @@ Console numbers only, with date, commits of both repos and settings.
 ### 2026-11-19 · Essentials map run 3 · New 3DS · seam check (kit 3)
 - **Commits:** kit 3 (SHA-256 `f189ea99…`) from a local merge of mkxp-z-3ds `8d2d81cc` (fork
   PR 11) and `fa2a44d4` (fork PR 12, the get_pixel texture leak fix); rmxp3ds `6c44188`.
-- **Result:** the maintainer confirmed that the black vertical lines while walking sideways are
-  gone (half-texel inset, fork PR 10).
-- The result files sent with it are byte-identical to run 2's, timestamps included, so they
-  are not a new measurement. Kit 3 changes nothing on the frame path; run 2's numbers stand.
+- **Result:**
+  - The maintainer confirmed that the black vertical lines while walking sideways are gone
+    (half-texel inset, fork PR 10).
+  - The first set of result files sent was run 2's again (byte-identical); the correct files
+    followed.
+
+  | Map | FPS | Frame avg / p50 / p95 / max | `Scene_Map#update` | Ruby split (ms/frame) | Present path (ms/frame) |
+  |---|---|---|---|---|---|
+  | Route 5 (96 events) | **31.4** | 31.8 / 30.8 / 32.8 / 283 ms | 28.6 ms | updateMaps 4.3, updateSpritesets 21.6 (native tilemap 0.8) | composite 2.7 (vertex transform 1.3, 14.2 draws), present 0.15 |
+  | Route 3 (30 events) | **39.2** | 25.5 / 25.0 / 28.8 / 41 ms | 22.5 ms | updateMaps 1.6, updateSpritesets 19.1 (native tilemap 0.8) | composite 2.2, limiter 0.4 |
+
+  - The same as run 2 within noise. The M4 frame rate holds with the seam and leak fixes.
+  - Snapshots and logs: `3ds-results/map-run3/` (not in the repo).
 
 ### 2026-11-19 · Essentials map run 2 · New 3DS · M4 (native map renderer, faster gl3ds vertex path)
 - **Commits:** kit 2 from rmxp3ds `f32d273`, mkxp-z-3ds `eb546543` (`feat/3ds-frame-profile` on top
