@@ -148,6 +148,21 @@ begin
     check.call('scroll', near.call(c, tile_color.call(n_at.call(1, 1))), c.inspect)
   end
 
+  # no seams while scrolling by sub-tile amounts: at 0.625 scale tile edges fall between screen
+  # pixels; a row through opaque tiles (y = 1 * 32 + 16, columns 11..15) must never show
+  # the black background or neighbouring atlas tiles' alpha (seen on the console as black lines)
+  seams = []
+  [3, 5, 7, 11, 13, 19, 21, 27, 29].each do |sx|
+    r.update([map], sx, 0, false, 0.0)
+    snap.call do |px|
+      (11 * 32...16 * 32).each do |x|
+        c = px.call(x, 1 * 32 + 16)
+        seams << "#{sx}:#{x}" if c.sum < 60
+      end
+    end
+  end
+  check.call('scroll_no_seams', seams.empty?, seams.first(60).join(' '))
+
   # tone on the tiles only (sprites keep their colors)
   r.tone = Tone.new(-255, 0, 0)
   r.update([map], 0, 0, false, 0.0)

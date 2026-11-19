@@ -8,8 +8,9 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   screen on the New 3DS. The title opens 19.9 s after start and runs at 40.0 FPS; the snapshot
   matches Azahar's (Measurements, Essentials title run attempt 5). The runtime is fork `dev`
   `29930935`. M4 started: map baseline tool, Ruby compiler crash fixed (fork Ruby patch 0006), native map
-  renderer drawing Essentials maps (D17; M4 findings). Console map run 1: 26.7 FPS on Route 5,
-  32.9 FPS on Route 3 (Measurements). Next: dual-core rendering.
+  renderer drawing Essentials maps (D17; M4 findings). Console map run 2: 31.3 FPS on Route 5,
+  39.9 FPS on Route 3, so the M4 frame rate is met (Measurements). Open: scroll seams (fixed,
+  console check pending), texture leak (fixed), merges.
 - **2026-11-18:** M3 in progress: SDL2 utility libraries for the 3DS (fork `3ds/deps`, test app
   `tools/sdlcheck`); mkxp-z runs on the 3DS with the citro3d renderer (D14, D15): engine, render
   (27 checks) and synthetic title screen checks pass in Azahar and on the New 3DS (hardware run
@@ -447,6 +448,10 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   Before reporting, confirm on a desktop build. mkxp-z has no written AI contribution policy
   (checked the repo, wiki, org profile and issues; the community is on Discord): disclose AI
   assistance if it is ever filed.
+  Bitmap texture leak: `Bitmap::releaseResources` (`src/display/bitmap.cpp`) releases the texture
+  only when no CPU copy (`p->surface`, made by `get_pixel`/`set_pixel`) exists, so every bitmap
+  read with `get_pixel` leaks its texture. The fork has a 3DS-only hook (fork PR
+  https://github.com/michvllni/mkxp-z-3ds/pull/12).
   Charset guessing: `Encoding::convertString` (`src/util/encoding.h`) calls `iconv()` without
   checking `iconv_open`, and uchardet guesses mostly ASCII UTF-8 text wrongly (names libiconv may
   not know, or mojibake). The fork has a 3DS-only hook (fork PR
@@ -486,6 +491,38 @@ Console numbers only, with date, commits of both repos and settings.
   overflow (more than 15 moves to VRAM in one frame panic in libctru `gxqueue.c`), eviction
   copies not waited for, and empty scissor boxes covering the whole target; fixed in
   `5f8fabe6`. Attempt 3 follows.
+
+### 2026-11-19 · Essentials map run 2 · New 3DS · M4 (native map renderer, faster gl3ds vertex path)
+- **Commits:** kit 2 from rmxp3ds `f32d273`, mkxp-z-3ds `eb546543` (`feat/3ds-frame-profile` on top
+  of fork PRs 10 and 9; same tree as `8f74b4b1` after the rebase onto `dev`), SHA-256 `d9625d7e…`.
+  Settings as in run 1.
+- **Results:**
+
+  | Map | FPS | Frame avg / p50 / p95 / max | `Scene_Map#update` | Ruby split (ms/frame) | Present path (ms/frame) |
+  |---|---|---|---|---|---|
+  | Route 5 (96 events) | **31.3** | 31.9 / 30.8 / 33.3 / 295 ms | 28.8 ms | updateMaps 4.3, updateSpritesets 21.7 (native tilemap 0.8) | composite 2.7 (vertex transform 1.3, 13.8 draws), blit 0.06, present 0.15 |
+  | Route 3 (30 events) | **39.9** (the game's 40 FPS cap) | 25.1 / 25.0 / 25.6 / 49 ms | 21.8 ms | updateMaps 1.6, updateSpritesets 18.5 (native tilemap 0.8) | composite 2.1, limiter 0.7 |
+
+- **Reading:**
+  - The M4 frame rate (≥ 30 FPS) is met on both maps.
+  - What's left is Ruby: Essentials' sprite updates take about 18–21 ms per frame, game logic
+    1.6–4.3 ms, drawing about 3 ms.
+  - Single frames of about 300 ms remain on Route 5 (map setup and GC runs).
+- **Seams:**
+  - **Seen:** the maintainer saw thin black vertical lines at tile edges while the player walked
+    sideways (video and snapshots in `3ds-results/map-run2/`).
+  - **Cause:** at factor 0.625, tile edges fall between screen pixels, and edge samples reached
+    the neighbouring atlas slot.
+  - **Fix:** half-texel inset (fork https://github.com/michvllni/mkxp-z-3ds/pull/10). The tile
+    check `scroll_no_seams` reproduced the seam in Azahar and passes with the fix.
+- **Texture leak found on the way:**
+  - The memory figures added to the frame profile showed one texture kept alive per snapshot
+    read with `get_pixel`.
+  - **Cause:** upstream `Bitmap::releaseResources` freed the CPU copy instead of the texture.
+    Each `get_pixel` snapshot cost 2 MB of linear memory, so about 15 of them exhausted it.
+  - **Fix:** fork https://github.com/michvllni/mkxp-z-3ds/pull/12. Engine check
+    `get_pixel_no_texture_leak`: fails on `dev`, passes with the fix.
+- Local logs: `3ds-results/map-run2/` (not in the repo).
 
 ### 2026-11-19 · Essentials map run 1 · New 3DS · M4 (`tools/title --scene map`, native map renderer)
 - **Commits:** kit from rmxp3ds `d8d1e5a` and mkxp-z-3ds `510a9c66` (`feat/3ds-tilemap-renderer`

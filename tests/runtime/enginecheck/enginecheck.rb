@@ -45,6 +45,21 @@ begin
   cres = rb3ds_compile_check([0, 1, 2])
   # values 0..2 each skip the loops with k % 7 == value: 120 * 3 - 52 = 308 entries
   check.call('compile_next_loops', cres.size == 308 && cres.first(4) == [0, 0, 1, 1], "#{cres.size} values")
+  # textures of bitmaps read with get_pixel are released on dispose (fork bitmap.cpp hook):
+  # 24 x 640x480 (2 MB of linear memory each on the 3DS) would exhaust the 32 MB linear heap
+  red = Color.new(255, 0, 0)
+  24.times do
+    lb = Bitmap.new(640, 480)
+    lb.fill_rect(0, 0, 640, 480, red)
+    lb.get_pixel(1, 1)
+    lb.dispose
+  end
+  lb = Bitmap.new(640, 480)
+  lb.fill_rect(0, 0, 640, 480, red)
+  lc = lb.get_pixel(320, 240)
+  lb.dispose
+  check.call('get_pixel_no_texture_leak', lc.red.round == 255 && lc.alpha.round == 255,
+             "#{lc.red.round},#{lc.green.round},#{lc.blue.round},#{lc.alpha.round}")
   t = Table.new(4, 3, 2); t[3, 2, 1] = 77
   check.call('table', t[3, 2, 1] == 77 && t.xsize == 4)
   c = Color.new(10, 20, 30, 40); tone = Tone.new(-10, 0, 10, 50); r = Rect.new(1, 2, 3, 4)
