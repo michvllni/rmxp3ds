@@ -2,5 +2,8 @@
 // mkxp-z-3ds config (JSON5) for the engine check: RGSS1, run enginecheck.rb instead of game scripts.
 {
   "rgssVersion": 1,
+  // UTF-8 on purpose: uchardet 0.0.8 guesses this file as MAC-CENTRALEUROPE, a name the 3DS
+  // libiconv doesn't know (the runtime crashed reading Essentials' own mkxp.json, NOTES.md M3)
+  "windowTitle": "rmxp3ds engine check Kémon",
   "customScript": "enginecheck.rb"
 }
