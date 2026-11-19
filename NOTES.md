@@ -7,8 +7,8 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 - **2026-11-19:** M3 exit reached (D16): Pokémon Essentials v21.1 (local copy) reaches its title
   screen on the New 3DS. The title opens 19.9 s after start and runs at 40.0 FPS; the snapshot
   matches Azahar's (Measurements, Essentials title run attempt 5). The runtime is fork `dev`
-  `29930935`. M4 started: map baseline tool, open Ruby compiler crash, tilemap textures (M4
-  findings).
+  `29930935`. M4 started: map baseline tool, Ruby compiler crash fixed (fork Ruby patch 0006), tilemap
+  textures next (M4 findings).
 - **2026-11-18:** M3 in progress: SDL2 utility libraries for the 3DS (fork `3ds/deps`, test app
   `tools/sdlcheck`); mkxp-z runs on the 3DS with the citro3d renderer (D14, D15): engine, render
   (27 checks) and synthetic title screen checks pass in Azahar and on the New 3DS (hardware run
@@ -168,50 +168,40 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   - Without the GC (`GC.disable` during script loading, to get past the crash below), loading it
     failed with "Out of memory".
   - Next: textures above 1024 px or a native tilemap, and tileset splitting (PLAN §3.2).
-- **Ruby compiler crash on the 3DS (open):**
+- **Ruby compiler crash on the 3DS (fixed, fork https://github.com/michvllni/mkxp-z-3ds/pull/9):**
   - **Symptom:** a data abort or "Undefined Instruction" in `iseq_peephole_optimize` →
-    `optimize_checktype` (`compile.c:2839`/`2847` of 3.1.3, a NULL `INSN`) while Essentials'
-    scripts load. It is the same crash as Essentials title run attempt 4 on the console.
-  - **When it happens:** deterministic for a given probe and build, but which probe triggers it
-    depends on the preload code and the heap layout.
-    - Crashes: an earlier map probe (`Object.prepend` at preload) and the Scene_Intro version
-      without a TracePoint.
-    - Passes: the title probe, the plain game, and any run with a `script_compiled` TracePoint
-      active.
-  - **Debugging (a CRuby build with `-g`, instrumented `compile.c`):**
-    - In `087:DrawText` line 165 (a `next` in a `while` loop), the list holds `putnil, adjust,
-      jump <label NULL>, adjust, jump`: a jump whose label operand is NULL.
-    - The host (x86-64 CRuby 3.1.3, same scripts) is fine, even with `GC.stress` and
-      `MALLOC_PERTURB_`.
-  - **Variations tried on the 3DS:**
-    - Still occurs:
-      - with a 4 MiB RGSS stack (not a stack overflow);
-      - without the transient heap (`-DUSE_TRANSIENT_HEAP=0`);
-      - with `-fno-strict-aliasing`;
-      - with upstream fix e031eff343 (missing write barrier for iseq operands,
-        https://bugs.ruby-lang.org/issues/19880).
-    - Gone: with `compile.c` at `-O0`, or the GC disabled during script loading. Both could just
-      be layout effects.
-  - **The instruction matches `compile_next`'s `while` branch:** `label; putnil; adjust redo;
-    jump start_label`. So `ISEQ_COMPILE_DATA(iseq)->start_label` was NULL while `redo_label` was
-    set.
-  - **Further tests, none of which settles the cause:**
-    - With creation and per-peephole-step checks added, the bug no longer showed: code that
-      allocates nothing moved it.
-    - A synthetic `while`/`next` compile under `GC.stress` in Azahar: 21 rounds correct before
-      the timeout, so no sign that the GC frees an iseq while it compiles.
-    - Under Azahar's GDB stub (`tests/smoke/azahar-smoke.sh --gdb PORT`), with a conditional
-      breakpoint on `compile_next`, the same binary passed without a hit.
-    - With `compile.c` built using `-ftrivial-auto-var-init=zero` it passed. After restoring the
-      original `compile.o` and relinking, it also passed, as did six heap layouts (preload
-      padding from 0 to 800 strings).
-  - **Reading:** whether it happens depends on how the binary is linked, and on timing or
-    breakpoints, more than on the game scripts or heap layout. No crashing binary is kept, so
-    there is no repro right now.
-  - **Next:** keep every kit and test binary that crashes (ELF and `.3dsx`), then compare
-    candidate fixes (for example zero-initialized locals in `compile.c`) by crash rate over many
-    runs. A NULL check in `optimize_checktype` would avoid this crash site but hide a broken
-    instruction list.
+    `optimize_checktype` (a NULL `INSN`) while Essentials' scripts load. It is the same crash as
+    Essentials title run attempt 4 on the console (`3ds-results/title-attempt4/`).
+  - **When it happened:** seemingly at random. The preload code, debug checks, a GDB breakpoint or
+    simply relinking made it appear or disappear.
+  - **Cause:**
+    - devkitARM uses short enums, so `INSN.insn_id` in Ruby's `compile.c` is one byte at offset
+      12.
+    - `get_next_insn()` and `get_destination_insn()` can return ADJUST elements. `IS_INSN_ID` on
+      an ADJUST read the low byte of its label pointer, a heap address.
+    - When that byte is 60 (`BIN(jump)`), the ADJUST is taken for a `jump` and its bogus operand
+      is followed.
+    - The register dumps match: `r9 = 0x3c = BIN(jump)`, `r0 = 0x23 = BIN(dup)`.
+    - A debug CRuby build (`RB3DS_EXTRA_CFLAGS=-g`, instrumented `compile.c`) showed the case: a
+      `next` inside a `while` loop (`putnil, ADJUST(redo label), jump`), in `087:DrawText` line
+      165.
+    - M1 had already listed the risk ("devkitARM short enums break `compile.c` `IS_INSN_ID`", from
+      a PS Vita Ruby port by Asukate), but no patch had been added.
+  - **Fix:** fork Ruby patch 0006. `IS_INSN_ID`, the raw `insn_id` compare in branch jump
+    threading, and `optimize_checktype` now check that the element is an instruction (review
+    findings included).
+  - **Regression check:** engine check `compile_next_loops` compiles a method with 120
+    `while`/`next` loops 60 times, interleaved with allocations. Built with the old `compile.o`,
+    the runtime timed out (crashed) on it; with the patch it passes (`checks=18`).
+  - **Ruled out on the way:**
+    - stack size (4 MiB);
+    - the transient heap (`-DUSE_TRANSIENT_HEAP=0`);
+    - `-fno-strict-aliasing`;
+    - upstream e031eff343 (missing write barrier, https://bugs.ruby-lang.org/issues/19880);
+    - the GC freeing an iseq while it compiles (`GC.stress` test);
+    - heap layout alone.
+  - **Tools added for this:** `tests/smoke/azahar-smoke.sh --gdb PORT` (Azahar's GDB stub) and
+    the fork's `RB3DS_EXTRA_CFLAGS`.
 
 ## M3 findings (2026-11-18)
 - **Renderer architecture (D14):**

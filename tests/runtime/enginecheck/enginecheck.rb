@@ -26,6 +26,25 @@ begin
     "#{e.class}: #{e.message}"
   end
   check.call('encodings', enc_ok == true, "#{Encoding.name_list.size} names; #{enc_ok}")
+  # Ruby's compiler with devkitARM's one-byte enums (fork Ruby patch 0006): `next` in a `while`
+  # loop compiles to putnil, ADJUST(redo label), jump. Without the patch, an ADJUST whose label
+  # pointer has the low byte 60 (= BIN(jump)) was taken for a jump and crashed the peephole
+  # optimizer. 120 loops put their redo labels on many arena addresses, and the 60 compiles shift
+  # the arena; a broken build crashes here with high likelihood.
+  src = +"def rb3ds_compile_check(a)\n  out = []\n"
+  120.times do |k|
+    src << "  i = 0\n  while i < a.size\n    i += 1\n    next if a[i - 1] == #{k % 7}\n    out << #{k}\n  end\n"
+  end
+  src << "  out\nend\n"
+  pads = []
+  60.times do |n|
+    pads << ('p' * (n * 13 % 97 + 1))
+    RubyVM::InstructionSequence.compile(src)
+  end
+  eval(src)
+  cres = rb3ds_compile_check([0, 1, 2])
+  # values 0..2 each skip the loops with k % 7 == value: 120 * 3 - 52 = 308 entries
+  check.call('compile_next_loops', cres.size == 308 && cres.first(4) == [0, 0, 1, 1], "#{cres.size} values")
   t = Table.new(4, 3, 2); t[3, 2, 1] = 77
   check.call('table', t[3, 2, 1] == 77 && t.xsize == 4)
   c = Color.new(10, 20, 30, 40); tone = Tone.new(-10, 0, 10, 50); r = Rect.new(1, 2, 3, 4)
