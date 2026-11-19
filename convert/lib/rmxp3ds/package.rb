@@ -51,8 +51,8 @@ module RMXP3DS
 
       FileUtils.rm_rf(dest) if @opts[:clean]
       check_source
-      copied = copy_files(included)
       removed = remove_stale(included)
+      copied = copy_files(included)
       FileUtils.mkdir_p(File.join(dest, 'rmxp3ds'))
       File.write(File.join(dest, 'rmxp3ds', SOURCE_FILE), "#{@game.dir}\n")
       preload_paths = install_preloads(patches)
@@ -74,33 +74,39 @@ module RMXP3DS
     end
 
     # Refuses an output that overlaps the game: the package inside the game, or the game inside
-    # the directory the converter writes (OUT/rmxp3ds), symbolic links resolved.
+    # the directory the converter writes (OUT/rmxp3ds). Directories are compared by identity
+    # (device and inode), which also covers symbolic links, case-insensitive file systems and
+    # bind mounts. Symbolic links inside OUT/rmxp3ds/games/ID's path are refused outright.
     def check_paths
-      out = real_path(@opts[:out])
-      game = File.join(@game.dir, '')
-      writes = File.join(out, 'rmxp3ds', '')
-      if File.join(out, '').start_with?(game) || game.start_with?(writes)
-        raise ConvertError, '--out overlaps the game directory (the package must be outside the game, and the ' \
-                            'game outside OUT/rmxp3ds)'
+      out = File.expand_path(@opts[:out])
+      writes = File.join(out, 'rmxp3ds')
+      [writes, File.join(writes, 'games'), dest].each do |p|
+        raise ConvertError, "#{p} is a symbolic link; the package path must be real directories" if File.symlink?(p)
       end
+      overlap = parents(@game.dir).any? { |p| File.identical?(p, writes) } ||
+                parents(deepest_existing(dest)).any? { |p| File.identical?(p, @game.dir) }
+      return unless overlap
+      raise ConvertError, '--out overlaps the game directory (the package must be outside the game, and the ' \
+                          'game outside OUT/rmxp3ds)'
     end
 
-    # realpath of the deepest existing parent, plus the rest of the path.
-    def real_path(path)
-      path = File.expand_path(path)
-      rest = []
-      until File.exist?(path) || path == File.dirname(path)
-        rest.unshift(File.basename(path))
-        path = File.dirname(path)
-      end
-      File.join(File.realpath(path), *rest)
+    # The path and all its parents up to the root.
+    def parents(path)
+      list = [path]
+      list << File.dirname(list.last) until File.dirname(list.last) == list.last
+      list
+    end
+
+    def deepest_existing(path)
+      path = File.dirname(path) until File.exist?(path) || File.dirname(path) == path
+      path
     end
 
     # A package directory belongs to one game: refuse another game's package unless --clean.
     def check_source
       marker = File.join(dest, 'rmxp3ds', SOURCE_FILE)
       return unless File.file?(marker)
-      source = File.read(marker).strip
+      source = File.read(marker, encoding: 'UTF-8').chomp("\n")
       return if source == @game.dir
       raise ConvertError, "#{dest} holds a package of #{source}; choose another --id or use --clean"
     end
@@ -140,6 +146,7 @@ module RMXP3DS
       files.each do |rel|
         src = File.join(@game.dir, rel)
         dst = File.join(dest, rel)
+        File.unlink(dst) if File.symlink?(dst) # never write through a link in the package
         next if same_file?(src, dst)
         FileUtils.mkdir_p(File.dirname(dst))
         FileUtils.cp(src, dst, preserve: true)
@@ -148,13 +155,15 @@ module RMXP3DS
       copied
     end
 
-    # Deletes files of an earlier run that are no longer in the game (or now left out). Our own
-    # files (mkxp.json, rmxp3ds/) stay. Returns the count.
+    # Deletes files of an earlier run that are no longer in the game (or now left out, or now
+    # spelled in another case: FAT would hold only one of them). Our own files (mkxp.json,
+    # rmxp3ds/) stay. Runs before the copy, so on a case-insensitive file system the file
+    # deleted for its old spelling is copied again. Returns the count.
     def remove_stale(included)
-      keep = included.map(&:downcase).to_h { |f| [f, true] }
+      keep = included.to_h { |f| [f, true] }
       stale = Dir.glob('**/*', File::FNM_DOTMATCH, base: dest).select do |f|
         next false if f == 'mkxp.json' || f == 'rmxp3ds' || f.start_with?('rmxp3ds/')
-        File.file?(File.join(dest, f)) && !keep[f.downcase]
+        (File.file?(File.join(dest, f)) || File.symlink?(File.join(dest, f))) && !keep[f]
       end
       stale.each { |f| File.delete(File.join(dest, f)) }
       stale.size

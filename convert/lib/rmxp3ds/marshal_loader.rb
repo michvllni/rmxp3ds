@@ -64,9 +64,10 @@ module RMXP3DS
       Reader.new(bytes).read
     end
 
-    # Marshal 4.8 reader (format: ruby/doc/marshal.rdoc). Depth-limited against nesting bombs.
+    # Marshal 4.8 reader (format: ruby/doc/marshal.rdoc; object link order as marshal.c
+    # r_object). Depth-limited against nesting bombs (RMXP data nests fewer than 15 levels).
     class Reader
-      MAX_DEPTH = 2000
+      MAX_DEPTH = 200
 
       def initialize(bytes)
         @s = bytes.b
@@ -80,6 +81,8 @@ module RMXP3DS
         major, minor = byte, byte
         raise FormatError, "not Marshal 4.8 data (#{major}.#{minor})" unless major == 4 && minor <= 8
         value
+      rescue SystemStackError
+        raise FormatError, 'data nested too deep'
       end
 
       private
@@ -113,12 +116,27 @@ module RMXP3DS
         end
       end
 
+      # A symbol in a name position; 'I' wraps a symbol with an encoding (Ruby 1.9+ non-ASCII
+      # names): its ivars are read and dropped.
       def symbol
         case (t = byte.chr)
         when ':' then new_symbol
-        when ';' then @symbols.fetch(int) { raise FormatError, 'bad symbol link' }
+        when ';' then link(@symbols, 'symbol')
+        when 'I'
+          sym = symbol
+          int.times do
+            symbol
+            value
+          end
+          sym
         else raise FormatError, "symbol expected, got #{t.inspect}"
         end
+      end
+
+      def link(table, what)
+        idx = int
+        raise FormatError, "bad #{what} link" if idx.negative? || idx >= table.size
+        table[idx]
       end
 
       def new_symbol
@@ -149,14 +167,14 @@ module RMXP3DS
         when 'F' then false
         when 'i' then int
         when ':' then new_symbol
-        when ';' then @symbols.fetch(int) { raise FormatError, 'bad symbol link' }
-        when '@' then @objects.fetch(int) { raise FormatError, 'bad object link' }
+        when ';' then link(@symbols, 'symbol')
+        when '@' then link(@objects, 'object')
         when 'I' then with_ivars
         when '"' then register(bytes(int))
         when 'l'
           sign = byte.chr
           n = int * 2
-          v = bytes(n).bytes.each_with_index.sum { |b, i| b << (8 * i) }
+          v = n.zero? ? 0 : bytes(n).reverse.unpack1('H*').to_i(16) # little-endian, linear time
           register(sign == '-' ? -v : v)
         when 'f'
           s = bytes(int)
@@ -195,8 +213,25 @@ module RMXP3DS
       end
 
       # 'I': a value followed by instance variables; for strings, E/encoding set the encoding.
+      # 'I' around 'u': marshal.c reads the dumped string's ivars before it registers the user
+      # object, so the order of object links stays the same as Ruby's.
       def with_ivars
+        return user_with_ivars if @s.getbyte(@pos) == 'u'.ord
+
         obj = value
+        apply_ivars(obj)
+        obj
+      end
+
+      def user_with_ivars
+        @pos += 1
+        name = symbol
+        raw = bytes(int)
+        apply_ivars(raw)
+        register(user(name, raw))
+      end
+
+      def apply_ivars(obj)
         int.times do
           key = symbol
           val = value
@@ -207,7 +242,6 @@ module RMXP3DS
             obj.force_encoding(val.to_s) rescue obj.force_encoding('BINARY') # rubocop:disable Style/RescueModifier
           end
         end
-        obj
       end
 
       def array

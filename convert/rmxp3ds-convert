@@ -45,7 +45,7 @@
 require 'optparse'
 require_relative 'lib/rmxp3ds/package'
 
-HELP = File.read(__FILE__)[/^# SYNOPSIS.*?^# EXAMPLE\n(?:#[^\n]*\n)*/m].gsub(/^# ?/, '')
+HELP = File.read(__FILE__, encoding: 'UTF-8')[/^# SYNOPSIS.*?^# EXAMPLE\n(?:#[^\n]*\n)*/m].gsub(/^# ?/, '')
 
 opts = { preloads: [] }
 parser = OptionParser.new do |o|

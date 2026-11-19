@@ -29,7 +29,8 @@ module RMXP3DS
 
     def initialize(dir)
       raise ConvertError, "#{dir}: not a directory" unless File.directory?(dir)
-      @dir = File.realpath(dir)
+      @dir = File.realpath(dir).dup.force_encoding('UTF-8')
+      raise ConvertError, "#{dir}: the path is not UTF-8" unless @dir.valid_encoding?
       @problems = [] # [level, text] found while listing files (names, symlinks)
       @ini = read_ini
       @sections = read_sections
@@ -76,6 +77,8 @@ module RMXP3DS
             @problems << [:warning, "#{f}: broken symbolic link, left out"]
           elsif File.directory?(target)
             @problems << [:warning, "#{f}: linked directory, not followed (copy it into the game)"]
+          elsif !File.file?(target)
+            @problems << [:warning, "#{f}: symbolic link to something that is not a file, left out"]
           elsif !target.start_with?(File.join(@dir, ''))
             @problems << [:warning, "#{f}: symbolic link to a file outside the game, left out"]
           else
@@ -140,10 +143,13 @@ module RMXP3DS
     end
 
     # Essentials' compiled plugins: nested arrays with deflated sources somewhere inside; every
-    # string that inflates is taken as a section.
+    # string that inflates is taken as a section. Each object is visited once (links, cycles).
     def plugin_sections(path)
       found = []
+      seen = {}
       walk = lambda do |obj, name|
+        next if seen[obj.object_id]
+        seen[obj.object_id] = true
         case obj
         when Array
           label = obj.find { |o| o.is_a?(String) && o.end_with?('.rb') } || name

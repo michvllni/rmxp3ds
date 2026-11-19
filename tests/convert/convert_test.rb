@@ -91,6 +91,21 @@ class ConvertTest < Minitest::Test
     assert File.file?(File.join(inner, 'Game.ini'))
   end
 
+  # A symbolic link inside the package path pointing back at the game's parent: refused before
+  # anything is written or deleted.
+  def test_symlink_in_the_package_path_is_refused
+    games = File.join(@tmp, 'games')
+    _o, e, s = Open3.capture3(RbConfig.ruby, MAKE_GAME, '--out', File.join(games, 'foo'))
+    assert s.success?, e
+    FileUtils.mkdir_p(File.join(@out, 'rmxp3ds'))
+    File.symlink(games, File.join(@out, 'rmxp3ds/games'))
+    _o, err, st = Open3.capture3(RbConfig.ruby, CONVERT, '--game', File.join(games, 'foo'), '--out', @out,
+                                 '--id', 'foo', '--clean')
+    assert_equal 1, st.exitstatus
+    assert_includes err, 'is a symbolic link'
+    assert File.file?(File.join(games, 'foo/Game.exe'))
+  end
+
   def test_package_of_another_game_is_refused
     make_game
     assert convert('--id', 't')[2].success?
@@ -196,6 +211,12 @@ class ConvertTest < Minitest::Test
       def marshal_load(_d) = raise('must not be called')
       def _dump(_d) = 'abc'
     end
+    cp = Class.new { def _dump(_d) = 'é'.encode('Windows-1252') }
+    Object.const_set(:RMXP3DSCp1252Probe, cp)
+    one = RMXP3DSCp1252Probe.new
+    got = RMXP3DS::Data.load(Marshal.dump([one, one, 'x']))
+    assert_same got[0], got[1] # object links in Ruby's order (dumped string's ivars first)
+    assert_equal 'x', got[2]
     Object.const_set(:RMXP3DSLoaderProbe, probe)
     plain = Class.new { def initialize = (@v = [1, 'é', { a: 2.5 }]) }
     Object.const_set(:RMXP3DSPlainProbe, plain)
@@ -212,9 +233,34 @@ class ConvertTest < Minitest::Test
       assert_equal v, RMXP3DS::Data.load(Marshal.dump(v))
     end
     assert_raises(RMXP3DS::Data::FormatError) { RMXP3DS::Data.load("\x04\x08[\x07".b) }
+    # negative object link, nesting bomb
+    assert_raises(RMXP3DS::Data::FormatError) { RMXP3DS::Data.load("\x04\x08[\x07\"\x06a@\xFA".b) }
+    assert_raises(RMXP3DS::Data::FormatError) { RMXP3DS::Data.load("\x04\x08".b + "[\x06".b * 5000 + '0') }
+    # a 1 MB bignum is read in linear time
+    n = 1 << 20
+    t = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+    big = RMXP3DS::Data.load("\x04\x08l+".b + [4, n / 2].pack('Cl<') + "\xFF".b * n)
+    assert (big == (1 << (8 * n)) - 1), 'bignum value'
+    assert_operator Process.clock_gettime(Process::CLOCK_MONOTONIC) - t, :<, 5
+    # symbol with encoding in a name position (Ruby 1.9+ non-ASCII struct member)
+    st = Struct.new(:"ä")
+    Object.const_set(:RMXP3DSStructProbe, st)
+    assert_equal 1, RMXP3DS::Data.load(Marshal.dump(RMXP3DSStructProbe.new(1)))[:"ä"]
   ensure
     Object.send(:remove_const, :RMXP3DSLoaderProbe) if defined?(RMXP3DSLoaderProbe)
     Object.send(:remove_const, :RMXP3DSPlainProbe) if defined?(RMXP3DSPlainProbe)
+    Object.send(:remove_const, :RMXP3DSCp1252Probe) if defined?(RMXP3DSCp1252Probe)
+    Object.send(:remove_const, :RMXP3DSStructProbe) if defined?(RMXP3DSStructProbe)
+  end
+
+  def test_cyclic_plugin_data
+    make_game
+    a = []
+    a << a << ['x.rb', Zlib::Deflate.deflate('Win32API.new("kernel32", "Sleep", "l", "v")')]
+    File.binwrite(File.join(@game, 'Data/PluginScripts.rxdata'), Marshal.dump(a))
+    out, err, st = convert('--id', 't', '--dry-run')
+    assert st.success?, err
+    assert_includes out, 'Win32API kernel32: 1 script(s) (x.rb)'
   end
 
   def test_image_sizes
