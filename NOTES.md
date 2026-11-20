@@ -10,7 +10,9 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   `29930935`. M4 started: map baseline tool, Ruby compiler crash fixed (fork Ruby patch 0006), native map
   renderer drawing Essentials maps (D17; M4 findings). Console map run 2: 31.3 FPS on Route 5,
   39.9 FPS on Route 3, so the M4 frame rate is met (Measurements). Scroll seams fixed and confirmed on
-  the console (run 3), texture leak fixed. Open: merges.
+  the console (run 3), texture leak fixed. **M4 done** (exit: ≥ 30 FPS walking on Essentials
+  maps, console map run 3: 31.4 / 39.2 FPS). The plan's second half of M4, the core 1 renderer,
+  is deferred (Carried over). The runtime is fork `dev` `2c085872`.
 - **2026-11-18:** M3 in progress: SDL2 utility libraries for the 3DS (fork `3ds/deps`, test app
   `tools/sdlcheck`); mkxp-z runs on the 3DS with the citro3d renderer (D14, D15): engine, render
   (27 checks) and synthetic title screen checks pass in Azahar and on the New 3DS (hardware run
@@ -153,7 +155,7 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   JIT): while_loop_1M 670 ms, method_call_300k 1028 ms, object_alloc_200k 1637 ms,
   marshal_load_fixture 90 ms.
 
-## M4 findings (2026-11-19, in progress)
+## M4 findings (2026-11-19)
 - **Baseline tool:** `tools/title/title.sh --scene map` with `tools/title/map_probe.rb`.
   - The probe replaces Essentials' `Scene_Intro#main` (hooked through a `TracePoint(:end)`) with
     `Game.start_new`.
@@ -440,6 +442,11 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 - **M3 (runtime integration):** set `rb3ds_main_stack_size` (fork `3ds/ruby/shim/include/rb3ds.h`) to the
   rgss thread's stack size before `RUBY_INIT_STACK` (mkxp-z `binding/binding-mri.cpp:1194`), and create
   that thread with a large stack (SDL2 n3ds default: 80 KiB).
+- **Later (performance):**
+  - The core 1 renderer from the plan (§3.1) is deferred. M4 reached 31–40 FPS on one core, and
+    drawing takes about 3 ms of a 32 ms frame (console map run 3). The rest is Ruby, mostly
+    Essentials' sprite updates, so native sprite updates come first (§5).
+  - Single frames of about 300 ms on Route 5 (map setup, GC) are not investigated yet.
 - **Later:** Ruby thread preemption (timer without pipes); guard page + exception handler for deep C
   recursion.
 - **Backlog, upstream mkxp-z (on hold, maintainer decision 2026-11-18: no upstream traction for now):**

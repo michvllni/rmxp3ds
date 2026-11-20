@@ -6,9 +6,10 @@ New Nintendo 3DS, with optional per-layer stereoscopic 3D.
 **Status:** early development. M0 (toolchain, CI) and M1 (CRuby 3.1.3 on the 3DS: scripts from
 SD, Marshal load of RMXP data, threads, micro-benchmarks) run in the emulator and on the New 3DS.
 M2 (go/no-go benchmark): a real game's scripts run headlessly on the New 3DS (`tools/m2`);
-decision: continue (docs/DECISIONS.md D13). M3 (in progress): mkxp-z runs on the 3DS with a
-citro3d renderer; sprites, windows, effects, transitions and a synthetic title screen render in
-the emulator. Nothing playable yet. See
+decision: continue (docs/DECISIONS.md D13). M3: mkxp-z runs on the 3DS with a citro3d renderer;
+Pokémon Essentials v21.1 reaches its title screen on the New 3DS. M4: a native map renderer;
+the player walks Essentials maps at 31–40 FPS on the New 3DS. Next: M5, the converter. Nothing
+is playable end to end yet. See
 [NOTES.md](NOTES.md) for the current state and [docs/PLAN.md](docs/PLAN.md) for the roadmap.
 
 ## Repositories
