@@ -4,6 +4,12 @@
 Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` from PLAN §10.
 
 ## Status
+- **2026-11-20:** M4 closed (rmxp3ds https://github.com/michvllni/rmxp3ds/pull/8). M6 started:
+  ndsp audio in the runtime, MIDI rendered by the converter, a wild battle probe; the battle
+  completes in Azahar with music and sounds (M6 findings). Open: console run.
+- **2026-11-19:** M5 started: converter v1 (`convert/rmxp3ds-convert`) packages a game for
+  `sdmc:/rmxp3ds/games/<id>/`; the runtime lists those games (fork game picker). The converted
+  Essentials demo reaches its title in Azahar (M5 findings). Open: the console run.
 - **2026-11-19:** M3 exit reached (D16): Pokémon Essentials v21.1 (local copy) reaches its title
   screen on the New 3DS. The title opens 19.9 s after start and runs at 40.0 FPS; the snapshot
   matches Azahar's (Measurements, Essentials title run attempt 5). The runtime is fork `dev`
@@ -64,6 +70,8 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 | makerom | `v0.19.0` (2026-01-18), `makerom-v0.19.0-ubuntu_x86_64.zip` sha256 `287b809dec064e0ad597e3d272c49ecb7eed41693d5ee6fef9d8a8aa24c2497e`, binary at zip root; needs glibc ≥ 2.38 | github.com/3DSGuy/Project_CTR/releases |
 | GitHub Actions | checkout v7.0.1 `3d3c42e5`, setup-buildx-action v4.4.1 `f87e5991`, build-push-action v7.4.0 `c3c9e263` (pinned by SHA) | GitHub releases API |
 | bannertool | Epicpkmn11 `v1.2.2` (2022-05-18), `bannertool.zip` sha256 `e4259c08fe8944ebadd5f4b96f9a8603e5427338074cfc46323fbbc3410d51ed` (computed, not published), binary `linux-x86_64/bannertool` | github.com/Epicpkmn11/bannertool/releases |
+
+| FluidSynth (converter, MIDI to Ogg) | Debian trixie `fluidsynth` 2.4.4+dfsg-1+deb13u3 (apt, not pinned further like the other apt tools); ffmpeg 7.1 with libvorbis from the same suite | `apt-cache policy fluidsynth`, `fluidsynth --version` (2026-11-20) |
 
 ### Notes on the pins
 - Azahar's extracted AppImage still needs host libraries (libEGL, libGLX, libOpenGL, libX11-xcb,
@@ -154,6 +162,115 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 - **Emulator timings are not performance numbers.** For the record (Azahar 2126.2, 100 % clock,
   JIT): while_loop_1M 670 ms, method_call_300k 1028 ms, object_alloc_200k 1637 ms,
   marshal_load_fixture 90 ms.
+
+## M6 findings (2026-11-20, in progress)
+- **Audio in the runtime** (fork https://github.com/michvllni/mkxp-z-3ds/pull/14, `3ds/platform/audio3ds.cpp`):
+  - ndsp replaces the silent stub. BGM, BGS and ME are streamed by an audio thread (4 wave
+    buffers of 4096 frames per channel); SE are decoded once into a 3 MiB cache in linear memory
+    and play on 8 channels.
+  - The audio thread runs on the New 3DS core 2 when the process may use it, else core 1, else
+    the app core. Azahar: core 2 (`audio: ndsp ready, audio thread on core 2` in
+    `sdmc:/rmxp3ds/mkxp-stderr.txt`); the console is to be checked.
+  - Formats: Ogg Vorbis (Tremor 1.2.1 from the 3DS portlibs, integer decoder) and PCM WAV. The
+    semantics follow upstream `src/audio` (same file again only changes the volume, pitch 50–150 %,
+    fades, ME pauses the BGM, Vorbis `LOOPSTART`/`LOOPLENGTH`, `bgm_pos` in seconds).
+  - ndsp needs the DSP firmware `sdmc:/3ds/dspfirm.cdc` (dumped on the console, e.g. with
+    DSP1); without it the game runs silently. Azahar's HLE DSP ignores the firmware's content,
+    so tests use a file of zeros.
+  - Not yet: SE are decoded on the Ruby thread the first time they play (a hitch on the first
+    cry of a Pokémon); the console frame cost of decoding 65456 Hz stereo BGM is unknown.
+- **Essentials v21.1 audio (local copy, counts):** BGM 33 MIDI + 10 Ogg, ME 22 Ogg, SE 86 Ogg,
+  SE/Anim 137 Ogg, SE/Cries 655 Ogg. Most Ogg files are 65456 Hz stereo, cries 10–44 kHz mono.
+- **MIDI in the converter** (`convert/lib/rmxp3ds/midi.rb`): the 3DS has no MIDI synthesizer
+  (mkxp-z uses FluidSynth on the PC), so the converter renders every MIDI file under `Audio/`
+  with FluidSynth and the game's soundfont (`mkxp.json` `midiSoundFont`, else `soundfont.sf2`,
+  else `--soundfont`) to Ogg Vorbis, 32000 Hz (close to the DSP's 32728 Hz), quality 4.
+  - Loop: as mkxp-z's MIDI player (`src/audio/midisource.cpp`): the last controller 111 in file
+    order marks the loop start; the loop end is the end of the longest track, where a track ends
+    at its last event mkxp-z handles (the end-of-track delta does not count); a controller 111
+    at or after the end loops from 0. Written as `LOOPSTART`/`LOOPLENGTH`; the runtime honors
+    `LOOPSTART=0` too (upstream mkxp-z would loop the whole file, tail included). The 2 s reverb
+    tail after the last event is rendered outside the loop.
+  - Safety (review): the soundfont must be a SoundFont 2 file (FluidSynth silently falls back to
+    the system's soundfont otherwise); songs over 30 min are refused; each tool run times out
+    after 10 min; FluidSynth gets an empty config file instead of the user's; rendered files
+    never write through links; the cache stamp includes a render version and the soundfont
+    path. None of the 33 Essentials
+    MIDI files has controller 111 (they loop from the start).
+  - Gain 0.5 (FluidSynth default 0.2 was quiet): mean −16.9 dB against −15.3 dB of Essentials'
+    own Ogg BGM; rendered as float and limited at 0.97, so peaks do not clip.
+  - Essentials: 33 files in 38 s (workspace, one process at a time), 37 MiB of BGM in the
+    package; a second run renders nothing (`rmxp3ds/midi.txt` remembers size and time of the
+    MIDI and the soundfont).
+  - Without FluidSynth/ffmpeg or a soundfont the MIDI files are left out with a warning (the
+    runtime would skip them anyway).
+- **Wild battle** (`tools/title/battle_probe.rb`, preload script): a new Essentials game on
+  Route 5 with a level 100 Pikachu that knows Thunder Shock, `WildBattle.start(:PIDGEY, 2)`,
+  USE pressed every 10 frames. Azahar (2026-11-20, fork `feat/3ds-audio` d3d8c085, converted
+  package with rendered MIDI): the battle is won after 24.1 s and 382 frames, with battle
+  scene, animations, messages, music and sounds; no audio file skipped. Frame rate in the
+  emulator does not count.
+  - A first version prepended a module to `Graphics` before the game's scripts; Essentials
+    aliases `Graphics.update` (Transitions), so the alias called the probe again until
+    SystemStackError. The frame counter is now an alias made after the scripts (AGENTS pitfall).
+  - `WildBattle.start` returns `true` when won in v21.1 (not the 1 of older versions).
+
+## M5 findings (2026-11-19, in progress)
+- **Converter v1:** `convert/rmxp3ds-convert` (Ruby, host Ruby 3.1.3 like the runtime, no gems).
+  - **Output:** `OUT/rmxp3ds/games/<id>/`. The plan's `sdmc:/3ds/xp3ds/games/<id>/` predates the
+    project name; `3ds/` holds apps, so games sit next to the existing `sdmc:/rmxp3ds/` files. The
+    runtime gets a game picker for this directory (fork https://github.com/michvllni/mkxp-z-3ds/pull/13).
+  - **What it does:**
+    - Reads Game.ini and the scripts (Data/Scripts.rxdata, plus Essentials' PluginScripts.rxdata).
+    - Detects the profile: Essentials v21 is found by `module Essentials … VERSION = "21.` and
+      its size by `SCREEN_WIDTH`/`SCREEN_HEIGHT`; otherwise RPG Maker XP at 640×480.
+    - Copies the game without PC-only files: `*.exe`, `*.dll`, shortcuts, `Game.rxproj`, the
+      game's `mkxp.json`, MIDI soundfonts (no MIDI yet, M6) and OS litter. A second run copies only
+      changed files.
+    - Writes `mkxp.json`: factor 240/height (D15), no path cache.
+    - Installs `patches/<profile>/*.rb` as preload scripts. Rewriting Scripts.rxdata is not needed:
+      the patches hook classes by name when they are defined.
+  - **Validation report:**
+    - File names FAT32 cannot hold (error: nothing is written).
+    - Graphics and audio named by the database, maps, event commands and move routes but missing
+      from the game.
+    - Images over 1024 px.
+    - Win32API/DLL and Fiddle use.
+  - **Loading data without RGSS:** the data is read by a pure-Ruby reader of Marshal 4.8
+    (`convert/lib/rmxp3ds/marshal_loader.rb`), not `Marshal.load`.
+    - Objects become class name plus instance variables; Table is decoded; other `_dump` types
+      are kept as bytes.
+    - No class named in the data is ever instantiated, so a crafted `.rxdata` from a downloaded
+      game cannot run code through existing classes (Marshal gadget chains).
+    - It loads Essentials' 86 data files in 0.33 s; Map041's tile Table matches Marshal.load's.
+  - **Package safety:**
+    - The output may not overlap the game (symbolic links resolved).
+    - A package directory records its source game, and another game is refused without `--clean`.
+    - Files the game no longer has are removed on the next run.
+    - File names that are not UTF-8, or that differ only in case, are errors; symbolic links to
+      files outside the game are left out.
+- **Essentials v21.1 (local copy):**
+  - The scan takes 0.4 s. It covers 7596 files (56.7 MiB); 10 files (27.5 MiB) are left out:
+    the exes, DLLs, the soundfont and others.
+  - Nothing is named by the data but missing, except one sound effect that Essentials itself
+    lacks.
+  - 13 images are over 1024 px: 9 tilesets up to 256×16064, 2 animations, 1 transition and 1 UI
+    sheet.
+  - The package reaches the title screen in Azahar from `sdmc:/rmxp3ds/games/essentials/` (picker
+    build, title probe as `--preload`).
+- **Not done, on purpose:**
+  - Splitting tall tilesets: not needed. The native renderer (D17) reads them in place, and
+    splitting saves no memory.
+  - Downscaling assets: not needed. The runtime scales the screen (D15).
+  - Audio conversion: M6.
+  - ISeq precompilation: measure first; the title takes about 20 s on the console, and parsing is
+    part of that.
+- **Tests:**
+  - `tests/convert/convert_test.rb`: host tests with synthetic games from
+    `tests/fixtures/make-rmxp-game.rb`.
+  - CI boots a converted synthetic game from `sdmc:/rmxp3ds/games/` in Azahar (9 checks in its
+    own `Main` section: started from the games directory, patch set preloaded, `mkxp.json`, PC
+    files left out, picture, map and tileset data, frames).
 
 ## M4 findings (2026-11-19)
 - **Baseline tool:** `tools/title/title.sh --scene map` with `tools/title/map_probe.rb`.
@@ -447,6 +564,7 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
     drawing takes about 3 ms of a 32 ms frame (console map run 3). The rest is Ruby, mostly
     Essentials' sprite updates, so native sprite updates come first (§5).
   - Single frames of about 300 ms on Route 5 (map setup, GC) are not investigated yet.
+  - ISeq precompilation in the converter (M5 findings).
 - **Later:** Ruby thread preemption (timer without pipes); guard page + exception handler for deep C
   recursion.
 - **Backlog, upstream mkxp-z (on hold, maintainer decision 2026-11-18: no upstream traction for now):**

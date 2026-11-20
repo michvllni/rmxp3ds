@@ -31,6 +31,8 @@ jq
 # Converter / asset tools
 ffmpeg
 imagemagick
+# MIDI to Ogg Vorbis in the converter (M6)
+fluidsynth
 
 # Headless Azahar: virtual display + input/screenshot helpers
 xvfb

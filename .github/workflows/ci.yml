@@ -176,6 +176,37 @@ jobs:
                 --sd-file build/tilecheck/single.png=rmxp3ds/game/Graphics/Autotiles/single.png \
                 --sd-file build/tilecheck/autotile192.png=rmxp3ds/game/Graphics/Autotiles/autotile192.png \
                 --timeout 300 --screenshot build/tile-smoke.png'
+      # M6: ndsp audio. Azahar's HLE DSP ignores the firmware's content, so a placeholder of zeros
+      # stands in for sdmc:/3ds/dspfirm.cdc (the console needs the real one, dumped from it).
+      - name: Azahar runtime audio check
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspaces/rmxp3ds" -w /workspaces/rmxp3ds rmxp3ds-dev:ci \
+            bash -c 'set -euo pipefail
+              tests/runtime/audiocheck/make-assets.sh --out-dir build/audiocheck
+              head -c 4096 /dev/zero > build/audiocheck/dspfirm-placeholder.cdc
+              tests/smoke/azahar-smoke.sh --3dsx runtime/build-3ds/mkxp/mkxp-z.3dsx \
+                --result rmxp3ds/test/audio.txt --expect "^RMXP3DS_TEST audio PASS" \
+                --sd-file tests/runtime/audiocheck/mkxp.json=rmxp3ds/game/mkxp.json \
+                --sd-file tests/runtime/audiocheck/audiocheck.rb=rmxp3ds/game/audiocheck.rb \
+                --sd-file build/audiocheck/dspfirm-placeholder.cdc=3ds/dspfirm.cdc \
+                --sd-dir build/audiocheck/Audio=rmxp3ds/game/Audio \
+                --timeout 300'
+      # M5: converter (convert/rmxp3ds-convert) host tests, then a converted synthetic game booted
+      # from sdmc:/rmxp3ds/games/<id>/ through the runtime's game picker.
+      - name: Converter tests (host) and converted package in Azahar
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspaces/rmxp3ds" -w /workspaces/rmxp3ds rmxp3ds-dev:ci \
+            bash -c 'set -euo pipefail
+              ruby tests/convert/convert_test.rb
+              ruby tests/fixtures/make-rmxp-game.rb --out build/convert/game
+              convert/rmxp3ds-convert --game build/convert/game --out build/convert/sd \
+                --id rmxp3ds-convert-test --patch-set tests/convert/patches --clean
+              tests/smoke/azahar-smoke.sh --3dsx runtime/build-3ds/mkxp/mkxp-z.3dsx \
+                --result rmxp3ds/test/convert.txt --expect "^RMXP3DS_TEST convert PASS" \
+                --sd-dir build/convert/sd/rmxp3ds=rmxp3ds \
+                --timeout 300 --screenshot build/convert-smoke.png'
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -193,5 +224,6 @@ jobs:
             build/render-smoke.png
             build/title-smoke.png
             build/tile-smoke.png
+            build/convert-smoke.png
           if-no-files-found: ignore
           retention-days: 14

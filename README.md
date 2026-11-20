@@ -33,5 +33,19 @@ devkitARM/libctru/citro3d, host Ruby, packaging tools and a headless Azahar emul
 No game content is part of this project. You convert games you own; real games stay outside the
 repository. See [AGENTS.md](AGENTS.md) for contributor rules.
 
+Converting a game (host Ruby 3.1, no gems):
+```sh
+convert/rmxp3ds-convert --game ~/games/MyGame --out build/sd \
+  --runtime runtime/build-3ds/mkxp/mkxp-z.3dsx
+```
+Copy the contents of `build/sd` to the root of the SD card. The app (`sdmc:/3ds/rmxp3ds/`)
+lists every game in `sdmc:/rmxp3ds/games/`. Each package has a report
+(`rmxp3ds/convert-report.txt`) with the detected profile, the files left out (Windows
+programs and DLLs), missing graphics or audio, and script calls that cannot work on the 3DS.
+MIDI music is rendered to Ogg Vorbis with the game's soundfont; that needs `fluidsynth` and
+`ffmpeg` on the PC. Sound on the console needs its DSP firmware at `sdmc:/3ds/dspfirm.cdc`
+(dumped on the console, e.g. with DSP1); without it games run silently.
+`--help` lists all options.
+
 ## License
 GPL-3.0, see [LICENSE](LICENSE). The runtime submodule is GPL-2.0-or-later.

@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 #
 # SYNOPSIS
-#   tools/title/title.sh azahar --game DIR [--scene title|map] [--patch FILE]... [--height PX]
+#   tools/title/title.sh azahar --game DIR [--scene title|map|battle] [--patch FILE]... [--height PX]
 #                               [--3dsx FILE] [--timeout SEC] [--screenshot PNG] [--keep-home]
-#   tools/title/title.sh kit    --out DIR [--scene title|map] [--patch FILE]... [--height PX]
+#   tools/title/title.sh kit    --out DIR [--scene title|map|battle] [--patch FILE]... [--height PX]
 #                               [--3dsx FILE]
 #
 # DESCRIPTION
@@ -20,6 +20,11 @@
 #                    game instead of the title and walks the player around two demo maps,
 #                    measuring frame times: sdmc:/rmxp3ds/test/realmap.txt, step log
 #                    realmap-log.txt.
+#     --scene battle (M6 exit) tools/title/battle_probe.rb starts a new Pokémon Essentials v21
+#                    game with a level 100 Pokémon and plays one wild battle with scripted
+#                    input until it ends: sdmc:/rmxp3ds/test/realbattle.txt, step log
+#                    realbattle-log.txt. The game's MIDI music is not rendered here (use
+#                    convert/rmxp3ds-convert --preload tools/title/battle_probe.rb for that).
 #     azahar  runs it in headless Azahar (tests/smoke/azahar-smoke.sh); passes when the probe
 #             reports. Frame rates from the emulator do not count.
 #     kit     writes the SD card layout to DIR/sd without any game file: sd/3ds/rmxp3ds/mkxp-z.3dsx
@@ -28,7 +33,7 @@
 #
 # OPTIONS
 #   --game DIR        azahar: game directory (Game.ini, Data/, Graphics/ ...)
-#   --scene NAME      title (default) or map
+#   --scene NAME      title (default), map or battle
 #   --patch FILE      rmxp3ds patch script run as a preload script before the probe, in the
 #                     given order (e.g. patches/essentials-v21/tilemap_renderer.rb, D17)
 #   --height PX       height of the game's screen in pixels (default 480; Pokémon Essentials: 384,
@@ -83,7 +88,7 @@ while [ $# -gt 0 ]; do
     *) echo "title.sh: unknown argument: $1" >&2; usage >&2; exit 2 ;;
   esac
 done
-case "$SCENE" in title|map) ;; *) echo "title.sh: --scene must be title or map" >&2; exit 2 ;; esac
+case "$SCENE" in title|map|battle) ;; *) echo "title.sh: --scene must be title, map or battle" >&2; exit 2 ;; esac
 SHOT="${SHOT:-$REPO/build/real$SCENE.png}"
 PROBE="$HERE/${SCENE}_probe.rb"
 [ "$MODE" = kit ] || [ -f "$GAME/Game.ini" ] || { echo "title.sh: no Game.ini in --game DIR" >&2; exit 2; }
