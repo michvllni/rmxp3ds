@@ -78,7 +78,28 @@ Each milestone has an exit criterion measured **on real hardware**.
 | M7 | First real game | A small fan game fully playable; then Insurgence (patch set) |
 | M8 | Stereoscopic 3D | Per-layer depth on overworld, presets + per-game profiles, UI at screen plane |
 | M9 | Reborn attempt | Reborn boots and is playable through the first gym; documented performance |
-| M10 | Polish & release | Forwarders, UniStore, docs, compatibility list |
+| M10 | Polish & release | Game picker UI in the style of gpSP 3D (§4.1), forwarders, UniStore, docs, compatibility list |
+
+### 4.1 Game picker UI (gpSP 3D style)
+The runtime's game picker (fork `3ds/platform/gamepicker.cpp`, M5) is a plain text list on the
+bottom screen. It gets the look and handling of gpSP 3D's game list
+(https://github.com/bheppe/gpsp-3d, `gpsp3ds/source/ui_screens.c`, `scr_browser`):
+- **Bottom screen (320×240):** dark theme; a header with the app name, a "3D" badge, the version
+  and the games directory; one row per game with an icon and its name, the selected row
+  highlighted with an accent bar; a scroll bar when the list is longer than the screen; a footer
+  with the controls or a notice. gpSP 3D also lists folders; rmxp3ds lists only games.
+- **Input:** D-pad selects, A or a tap on a row starts, START exits (as gpSP 3D); the last
+  choice stays selected (`sdmc:/rmxp3ds/last-game.txt`, as now).
+- **Top screen (rmxp3ds addition):** the selected game's title (Game.ini) and, when the package
+  has one, its title image or icon from the converter, otherwise the rmxp3ds logo. Shown at the
+  screen plane (no depth) until M8 defines UI depth.
+- **Drawing:** a 320×240 RGB565 software canvas (as gpSP 3D's `ui.c` `ui_canvas`) shown before
+  the game starts.
+- **Code:** gpSP 3D is GPL-2.0 (GitHub license field); the fork is GPL-2.0-or-later. Copied
+  code keeps its terms and goes into `THIRD_PARTY.md` first; otherwise reimplement.
+- **Exit criterion:** on the console, a card with several games shows the list on the bottom
+  screen and the selection on the top screen; D-pad, touch and A start the chosen game.
+- **Order:** independent of M7–M9; it can be done earlier.
 
 ## 5. Performance strategy
 - Measure before optimizing: built-in profiler overlay on the bottom screen (Ruby time, render time, upload bytes, heap).
