@@ -162,7 +162,8 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 - **Converter v1:** `convert/rmxp3ds-convert` (Ruby, host Ruby 3.1.3 like the runtime, no gems).
   - **Output:** `OUT/rmxp3ds/games/<id>/`. The plan's `sdmc:/3ds/xp3ds/games/<id>/` predates the
     project name; `3ds/` holds apps, so games sit next to the existing `sdmc:/rmxp3ds/` files. The
-    runtime gets a game picker for this directory (fork https://github.com/michvllni/mkxp-z-3ds/pull/13).
+    runtime has a game picker for this directory (fork https://github.com/michvllni/mkxp-z-3ds/pull/13,
+    merged 2026-11-20 as `73ada718`).
   - **What it does:**
     - Reads Game.ini and the scripts (Data/Scripts.rxdata, plus Essentials' PluginScripts.rxdata).
     - Detects the profile: Essentials v21 is found by `module Essentials … VERSION = "21.` and
