@@ -111,6 +111,8 @@ cat > "$WORK/mkxp.json" <<JSON
   "enableHires": true,
   "framebufferScalingFactor": $FACTOR,
   "textureScalingFactor": 1.0,
+  // bilinear when a bitmap is drawn smaller: nearest sampling drops rows and columns of text
+  "bitmapSmoothScalingDown": 1,
   // no path cache: the 3DS SD card (FAT) already matches names without case, and listing all
   // of Essentials' 7606 files took minutes at start (NOTES.md M3, console attempt 4)
   "pathCache": false,

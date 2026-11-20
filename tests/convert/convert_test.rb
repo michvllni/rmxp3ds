@@ -46,6 +46,7 @@ class ConvertTest < Minitest::Test
     %w[Game.exe RGSS102E.dll Game.rxproj Audio/desktop.ini].each { |f| refute File.exist?(pkg(f)), f }
     conf = File.read(pkg('mkxp.json'))
     assert_includes conf, '"framebufferScalingFactor": 0.500000'
+    assert_includes conf, '"bitmapSmoothScalingDown": 1'
     assert_includes conf, '"preloadScript": ["rmxp3ds/patches/00_marker.rb"]'
     assert File.file?(pkg('rmxp3ds/patches/00_marker.rb'))
     assert_equal 'app', File.read(File.join(@out, '3ds/rmxp3ds/mkxp-z.3dsx'))

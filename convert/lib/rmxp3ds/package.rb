@@ -198,6 +198,9 @@ module RMXP3DS
           "enableHires": true,
           "framebufferScalingFactor": #{format('%.6f', factor)},
           "textureScalingFactor": 1.0,
+          // bilinear when a bitmap is drawn smaller (the whole screen at that factor): nearest
+          // sampling drops pixel rows and columns, and small text loses strokes (rmxp3ds NOTES.md M6)
+          "bitmapSmoothScalingDown": 1,
           // no path cache: the SD card (FAT) already matches names without case, and listing
           // thousands of files took minutes at start (rmxp3ds NOTES.md M3, console attempt 4)
           "pathCache": false,

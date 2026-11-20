@@ -171,7 +171,11 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
     - Copies the game without PC-only files: `*.exe`, `*.dll`, shortcuts, `Game.rxproj`, the
       game's `mkxp.json`, MIDI soundfonts (no MIDI yet, M6) and OS litter. A second run copies only
       changed files.
-    - Writes `mkxp.json`: factor 240/height (D15), no path cache.
+    - Writes `mkxp.json`: factor 240/height (D15), no path cache, bilinear scale-down
+      (`bitmapSmoothScalingDown: 1`, 2026-11-20): with nearest sampling at 0.625 small text lost
+      rows and columns on the console ("Pikachu" read as "Dikachu" in battle); bilinear keeps the
+      strokes in Azahar. Map tiles stay sharp (the native renderer samples nearest), Route 5 in
+      Azahar without seams at 37.2 FPS. `tools/title` writes the same.
     - Installs `patches/<profile>/*.rb` as preload scripts. Rewriting Scripts.rxdata is not needed:
       the patches hook classes by name when they are defined.
   - **Validation report:**
