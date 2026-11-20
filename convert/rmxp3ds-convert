@@ -1,0 +1,93 @@
+#!/usr/bin/env -S ruby --disable-gems
+# SPDX-License-Identifier: GPL-3.0-or-later
+#
+# SYNOPSIS
+#   convert/rmxp3ds-convert --game DIR --out DIR [--id ID] [--height PX]
+#                           [--patch-set auto|none|DIR] [--preload FILE]... [--runtime FILE]
+#                           [--clean] [--dry-run]
+#
+# DESCRIPTION
+#   Converts an RPG Maker XP game (e.g. Pokémon Essentials v21) into an SD card package for the
+#   rmxp3ds runtime: OUT/rmxp3ds/games/ID/ holds the game's files without PC-only ones (*.exe,
+#   *.dll, the game's mkxp.json, MIDI soundfonts ...), a new mkxp.json (RGSS1, screen scaled to
+#   the 3DS height: docs/DECISIONS.md D15, no path cache), the profile's patch set from
+#   patches/<profile>/ as preload scripts, and rmxp3ds/convert-report.txt. Copy OUT's contents to
+#   the root of the SD card; the runtime lists every game in sdmc:/rmxp3ds/games/.
+#   The report (also printed) lists the detected profile and screen size, files left out,
+#   images over the 3DS texture limit, graphics and audio the data names but the game lacks,
+#   Win32API/DLL calls, and file names the SD card cannot hold (errors: nothing is written).
+#   Game files stay where they are and are never part of this repository. Running it again
+#   copies only files that changed and removes files the game no longer has. The data files are
+#   read by a Marshal reader of our own that never runs code from them.
+#
+# OPTIONS
+#   --game DIR          game directory (Game.ini, Data/, Graphics/ ...)
+#   --out DIR           output directory (SD card layout)
+#   --id ID             package directory name (default: from the title; letters, digits, - _).
+#                       A package directory belongs to one game: another game needs another ID
+#   --height PX         game screen height (default: detected; Essentials' SCREEN_HEIGHT, a literal
+#                       Graphics.resize_screen, else 480); the scaling factor is 240/PX
+#   --patch-set SET     auto (default: by profile, e.g. patches/essentials-v21), none, or a directory
+#                       with *.rb patch scripts (run in name order before the game's scripts)
+#   --preload FILE      extra preload script after the patch set (tests, probes); repeatable
+#   --runtime FILE      also copy the runtime app to OUT/3ds/rmxp3ds/mkxp-z.3dsx
+#   --clean             delete OUT/rmxp3ds/games/ID first
+#   --dry-run           only check and report
+#   -h, --help          show this help
+#
+# EXIT STATUS
+#   0 package written (or dry run without errors), 1 errors in the game or while writing,
+#   2 wrong arguments
+#
+# EXAMPLE
+#   convert/rmxp3ds-convert --game ~/games/essentials --out build/sd \
+#     --runtime runtime/build-3ds/mkxp/mkxp-z.3dsx
+require 'optparse'
+require_relative 'lib/rmxp3ds/package'
+
+HELP = File.read(__FILE__, encoding: 'UTF-8')[/^# SYNOPSIS.*?^# EXAMPLE\n(?:#[^\n]*\n)*/m].gsub(/^# ?/, '')
+
+opts = { preloads: [] }
+parser = OptionParser.new do |o|
+  o.banner = HELP
+  o.on('--game DIR') { |v| opts[:game] = v }
+  o.on('--out DIR') { |v| opts[:out] = File.expand_path(v) }
+  o.on('--id ID') { |v| opts[:id] = v }
+  o.on('--height PX', Integer) { |v| opts[:height] = v }
+  o.on('--patch-set SET') { |v| opts[:patch_set] = %w[auto none].include?(v) ? v : File.expand_path(v) }
+  o.on('--preload FILE') { |v| opts[:preloads] << File.expand_path(v) }
+  o.on('--runtime FILE') { |v| opts[:runtime] = File.expand_path(v) }
+  o.on('--clean') { opts[:clean] = true }
+  o.on('--dry-run') { opts[:dry_run] = true }
+  o.on('-h', '--help') { puts HELP; exit }
+end
+begin
+  parser.parse!
+  raise OptionParser::InvalidArgument, "unexpected: #{ARGV.join(' ')}" unless ARGV.empty?
+  raise OptionParser::MissingArgument, '--game DIR' unless opts[:game]
+  raise OptionParser::MissingArgument, '--out DIR' unless opts[:out] || opts[:dry_run]
+  raise OptionParser::InvalidArgument, '--height must be positive' if opts[:height]&.<= 0
+  raise OptionParser::InvalidArgument, "--runtime #{opts[:runtime]}: not found" if opts[:runtime] && !File.file?(opts[:runtime])
+rescue OptionParser::ParseError => e
+  warn "rmxp3ds-convert: #{e.message}"
+  warn HELP
+  exit 2
+end
+opts[:out] ||= File.expand_path('build/dry-run')
+
+begin
+  game = RMXP3DS::Game.new(opts[:game])
+  pkg = RMXP3DS::Package.new(game, opts)
+  ok = pkg.run(dry_run: opts[:dry_run])
+  puts pkg.report
+  exit(ok ? 0 : 1)
+rescue RMXP3DS::ArgumentsError => e
+  warn "rmxp3ds-convert: #{e.message}"
+  exit 2
+rescue RMXP3DS::ConvertError, SystemCallError, IOError => e
+  warn "rmxp3ds-convert: #{e.message}"
+  exit 1
+rescue StandardError => e
+  warn "rmxp3ds-convert: internal error #{e.class}: #{e.message} (#{e.backtrace&.first})"
+  exit 1
+end

@@ -19,11 +19,11 @@ Status, findings, measurements, sources: [NOTES.md](NOTES.md).
                  network), azahar-headless.sh, azahar/ (qt-config.ini seed)
 .github/         CI workflows
 runtime/         submodule: mkxp-z-3ds
-convert/         converter (Ruby)                      — from M5
+convert/         converter (Ruby, M5): rmxp3ds-convert, lib/rmxp3ds/
 tools/           setup-workspace.sh, bench/ (Ruby test app), m2/ (headless game harness, M2),
                  sdlcheck/ (SDL2 utility libraries test app, M3), hw3/ (hardware run 3 kit, M3),
                  title/ (real game: title screen, M3 exit; map walk, M4 baseline)
-tests/           fixtures (synthetic only), golden images
+tests/           fixtures (synthetic only), golden images, convert/ (converter tests)
 patches/         patch sets per game (`patches/<game-id>/*.rb`), loaded as preload scripts
                  until the converter applies them (essentials-v21: native map renderer, D17)
 docs/            PLAN.md, DECISIONS.md
@@ -62,6 +62,8 @@ docs/            PLAN.md, DECISIONS.md
 | Hardware run 3 (M3) | `tools/hw3/hw3.sh azahar` validates the kit in Azahar; `tools/hw3/hw3.sh kit --out build/hw3` writes the SD layout (engine, render, title checks, frame times, HOME/sleep window; results in `sdmc:/rmxp3ds/test/hw3.txt`) |
 | Real game to its title screen (M3 exit, D16) | `tools/title/title.sh azahar --game DIR --height 384` (Essentials: 512×384) runs a local game copy in Azahar until the preload probe reports the title (`realtitle.txt`, step log `realtitle-log.txt`); `tools/title/title.sh kit --height 384 --out build/title-kit` writes a console kit without game files |
 | Real game walking on maps (M4 baseline) | `tools/title/title.sh azahar --game DIR --height 384 --scene map --patch patches/essentials-v21/tilemap_renderer.rb` (native map renderer, D17; without the patch Essentials' Ruby renderer cannot draw maps on the 3DS) starts a new Essentials v21 game instead of the title and walks the player around Route 5 and Route 3 (debug walk, scripted input), measuring frame times (`realmap.txt`, step log `realmap-log.txt`, snapshots `realmap-<map>.png`, which stay local); `kit --height 384 --scene map --patch patches/essentials-v21/tilemap_renderer.rb --out build/map-kit` for the console |
+| Convert a game (M5) | `convert/rmxp3ds-convert --game DIR --out build/sd [--runtime runtime/build-3ds/mkxp/mkxp-z.3dsx] [--preload FILE]` → `build/sd/rmxp3ds/games/<id>/` (copy `build/sd` to the SD card root; report in `rmxp3ds/convert-report.txt`; `--dry-run` only checks; see `--help`) |
+| Converter tests | `ruby tests/convert/convert_test.rb` (host); in Azahar: `ruby tests/fixtures/make-rmxp-game.rb --out build/convert/game && convert/rmxp3ds-convert --game build/convert/game --out build/convert/sd --id rmxp3ds-convert-test --patch-set tests/convert/patches --clean`, then `tests/smoke/azahar-smoke.sh --3dsx runtime/build-3ds/mkxp/mkxp-z.3dsx --result rmxp3ds/test/convert.txt --expect '^RMXP3DS_TEST convert PASS' --sd-dir build/convert/sd/rmxp3ds=rmxp3ds` |
 | SDL2 libraries test app | `cmake -S tools/sdlcheck -B build/sdlcheck -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake" && cmake --build build/sdlcheck`; in Azahar: `tests/smoke/azahar-smoke.sh --3dsx build/sdlcheck/sdlcheck.3dsx --result rmxp3ds/test/sdlcheck.txt --expect '^RMXP3DS_TEST sdlcheck PASS' --timeout 300` |
 | Ruby test/bench app | `cmake -S tools/bench -B build/bench -G Ninja -DCMAKE_TOOLCHAIN_FILE="$DEVKITPRO/cmake/3DS.cmake" && cmake --build build/bench` |
 | Ruby test in Azahar | `tests/smoke/azahar-smoke.sh --3dsx build/bench/bench.3dsx --result rmxp3ds/test/rubybench.txt --expect '^RMXP3DS_TEST rubybench PASS' --timeout 600` (add `--sd-file SRC=rmxp3ds/test/NAME` to run scripts/fixtures from SD) |
@@ -75,7 +77,8 @@ docs/            PLAN.md, DECISIONS.md
 CI (`.github/workflows/ci.yml`): shellcheck; dev container image build, hello-world build and
 Azahar smoke test, CRuby 3DS build, Ruby test/bench in Azahar with scripts from SD, M2 pipeline
 with a synthetic game (host and Azahar digests must match), SDL2 libraries build and
-`tools/sdlcheck` in Azahar, the runtime (`mkxp-z.3dsx`) with the engine, render, title and tile checks in Azahar, all inside
+`tools/sdlcheck` in Azahar, the runtime (`mkxp-z.3dsx`) with the engine, render, title and tile checks in Azahar, converter
+host tests and a converted synthetic game booted in Azahar, all inside
 the image (`.3dsx` and screenshots uploaded as artifact `smoke-tests`). Fill in this table as milestones add targets.
 
 ## Conventions
