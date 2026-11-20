@@ -161,6 +161,21 @@ jobs:
                 --sd-file build/titlecheck/title.png=rmxp3ds/game/Graphics/Titles/title.png \
                 --sd-file build/titlecheck/windowskin.png=rmxp3ds/game/Graphics/Windowskins/windowskin.png \
                 --timeout 300 --screenshot build/title-smoke.png'
+      - name: Azahar runtime tile check (native map renderer)
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspaces/rmxp3ds" -w /workspaces/rmxp3ds rmxp3ds-dev:ci \
+            bash -c 'set -euo pipefail
+              ruby tests/runtime/tilecheck/make-assets.rb --out-dir build/tilecheck
+              tests/smoke/azahar-smoke.sh --3dsx runtime/build-3ds/mkxp/mkxp-z.3dsx \
+                --result rmxp3ds/test/tile.txt --expect "^RMXP3DS_TEST tile PASS" \
+                --sd-file tests/runtime/tilecheck/mkxp.json=rmxp3ds/game/mkxp.json \
+                --sd-file tests/runtime/tilecheck/tilecheck.rb=rmxp3ds/game/tilecheck.rb \
+                --sd-file build/tilecheck/tileset.png=rmxp3ds/game/Graphics/Tilesets/tileset.png \
+                --sd-file build/tilecheck/autotile.png=rmxp3ds/game/Graphics/Autotiles/autotile.png \
+                --sd-file build/tilecheck/single.png=rmxp3ds/game/Graphics/Autotiles/single.png \
+                --sd-file build/tilecheck/autotile192.png=rmxp3ds/game/Graphics/Autotiles/autotile192.png \
+                --timeout 300 --screenshot build/tile-smoke.png'
       - name: Upload artifacts
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -177,5 +192,6 @@ jobs:
             build/mkxp-smoke.png
             build/render-smoke.png
             build/title-smoke.png
+            build/tile-smoke.png
           if-no-files-found: ignore
           retention-days: 14

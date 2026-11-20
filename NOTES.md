@@ -7,7 +7,12 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 - **2026-11-19:** M3 exit reached (D16): Pokémon Essentials v21.1 (local copy) reaches its title
   screen on the New 3DS. The title opens 19.9 s after start and runs at 40.0 FPS; the snapshot
   matches Azahar's (Measurements, Essentials title run attempt 5). The runtime is fork `dev`
-  `29930935`. Next: M4.
+  `29930935`. M4 started: map baseline tool, Ruby compiler crash fixed (fork Ruby patch 0006), native map
+  renderer drawing Essentials maps (D17; M4 findings). Console map run 2: 31.3 FPS on Route 5,
+  39.9 FPS on Route 3, so the M4 frame rate is met (Measurements). Scroll seams fixed and confirmed on
+  the console (run 3), texture leak fixed. **M4 done** (exit: ≥ 30 FPS walking on Essentials
+  maps, console map run 3: 31.4 / 39.2 FPS). The plan's second half of M4, the core 1 renderer,
+  is deferred (Carried over). The runtime is fork `dev` `2c085872`.
 - **2026-11-18:** M3 in progress: SDL2 utility libraries for the 3DS (fork `3ds/deps`, test app
   `tools/sdlcheck`); mkxp-z runs on the 3DS with the citro3d renderer (D14, D15): engine, render
   (27 checks) and synthetic title screen checks pass in Azahar and on the New 3DS (hardware run
@@ -149,6 +154,99 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 - **Emulator timings are not performance numbers.** For the record (Azahar 2126.2, 100 % clock,
   JIT): while_loop_1M 670 ms, method_call_300k 1028 ms, object_alloc_200k 1637 ms,
   marshal_load_fixture 90 ms.
+
+## M4 findings (2026-11-19)
+- **Baseline tool:** `tools/title/title.sh --scene map` with `tools/title/map_probe.rb`.
+  - The probe replaces Essentials' `Scene_Intro#main` (hooked through a `TracePoint(:end)`) with
+    `Game.start_new`.
+  - It walks a square on Route 5 (map 41, 96 events) and Route 3 (map 31, 30 events), using
+    Essentials' debug walk with scripted input.
+  - Per map, it measures 600 frames of frame interval and `Scene_Map#update` time, then saves a
+    snapshot.
+  - Azahar (emulator, not a performance number): 11.8 and 12.2 FPS. The frame time is almost all
+    in `Scene_Map#update`: Ruby logic, plus Essentials' sprite and tilemap updates with their
+    bitmap drawing.
+- **Native map renderer (D17, fork https://github.com/michvllni/mkxp-z-3ds/pull/10):**
+  - **Why:** Essentials' Ruby `TilemapRenderer` draws through bitmaps taller than 1024 px (log:
+    1024×4096, 256×1536, 160×1536). gl3ds could not use those, so only the player was drawn, on
+    black. The `Outside` tileset is 256×16064 (15.7 MiB as RGBA).
+  - **What replaces it:**
+    - The fork's `RMXP3DSTileRenderer`.
+    - The patch `patches/essentials-v21/tilemap_renderer.rb`: a preload script that redirects
+      `TilemapRenderer.new` and keeps Essentials' interface.
+    - A behavioural spec of Essentials' renderer, written in our own words, kept local.
+  - **Memory, first attempt:** uploading every tileset tile and autotile frame up front ran
+    out of linear memory ("out of linear memory for textures"), and Route 3 was half black.
+  - **Memory, second attempt:** keeping a CPU copy of each source failed on the second
+    `Outside`. The heap was about 75–83 MB with about 66 MB in use (`mallinfo`), so the extra
+    15.7 MB raised `bad_alloc`, and the app ended without a message.
+  - **Memory, now:** atlas slots are filled on first use. Tall tilesets are loaded uncached
+    (`Bitmap.new`) and read in place from the mega surface, kept alive until removed; small
+    images are copied.
+  - **gl3ds now reports `GL_MAX_TEXTURE_SIZE` 1024.** mkxp-z's RGSS Tilemap therefore refuses
+    tilesets taller than about 1300 px; the engine check tests that a 1024 px tileset is
+    accepted and a 4096 px one refused.
+  - **Azahar (emulator, not performance numbers):** with the patch, Route 5 and Route 3 draw
+    completely (snapshots checked by eye).
+    - Route 5: 21.2 FPS (11.8 before), `Scene_Map#update` 32 ms (81 before).
+    - Route 3: 28.1 FPS, update 23 ms.
+  - **Tile check** (`tests/runtime/tilecheck`, synthetic): 27 checks (two reviews, plus
+    `scroll_no_seams`).
+  - **Frame profile and vertex optimization (fork https://github.com/michvllni/mkxp-z-3ds/pull/11):**
+    - `RMXP3DSProfile.read` returns per-frame averages; the map probe logs them per map,
+      together with Essentials' `updateMaps`, `updateSpritesets` and the native tilemap update.
+    - **Azahar, Route 5, before the change:**
+      - `updateMaps` 5.4 ms, `updateSpritesets` 25.0 ms, of which the native tilemap is 1.0 ms
+        and the rest is Essentials' Ruby sprite updates.
+      - `composite` 14.6 ms, of which the gl3ds vertex transform was 13.4 ms, over about 13 draws
+        per frame. The scene traversal itself is negligible.
+      - Limiter, blit and present: under 1 ms.
+    - **Cause:** gl3ds looked up uniforms by name and attribute buffers in a map for every vertex,
+      and transformed shared quad vertices twice.
+    - **Fix:** resolved once per draw, and each distinct vertex transformed once. Vertex
+      transform 13.4 → 1.35 ms, `composite` 14.6 → 2.6 ms; Route 5 21.1 → 28.3 FPS, Route 3
+      26 → 38.1 FPS (emulator).
+    - **Consequence:** the render path is now about 3 ms, so a second core can save little.
+      Ruby's sprite updates (about 24 ms on Route 5) are the next target (PLAN §5).
+  - **Console map run 1, prepared on 2026-11-19:** kit from rmxp3ds `e20f3f0` and fork `510a9c66`
+    (`feat/3ds-tilemap-renderer`, on top of fork PR 9). Kit SHA-256 `1b959ffa…`, built with
+    `title.sh kit --scene map --patch patches/essentials-v21/tilemap_renderer.rb`. The ELF is kept
+    in `build/map-kit/` for symbolizing crash dumps.
+- **Ruby compiler crash on the 3DS (fixed, fork https://github.com/michvllni/mkxp-z-3ds/pull/9):**
+  - **Symptom:** a data abort or "Undefined Instruction" in `iseq_peephole_optimize` →
+    `optimize_checktype` (a NULL `INSN`) while Essentials' scripts load. It is the same crash as
+    Essentials title run attempt 4 on the console (`3ds-results/title-attempt4/`).
+  - **When it happened:** seemingly at random. The preload code, debug checks, a GDB breakpoint or
+    simply relinking made it appear or disappear.
+  - **Cause:**
+    - devkitARM uses short enums, so `INSN.insn_id` in Ruby's `compile.c` is one byte at offset
+      12.
+    - `get_next_insn()` and `get_destination_insn()` can return ADJUST elements. `IS_INSN_ID` on
+      an ADJUST read the low byte of its label pointer, a heap address.
+    - When that byte is 60 (`BIN(jump)`), the ADJUST is taken for a `jump` and its bogus operand
+      is followed.
+    - The register dumps match: `r9 = 0x3c = BIN(jump)`, `r0 = 0x23 = BIN(dup)`.
+    - A debug CRuby build (`RB3DS_EXTRA_CFLAGS=-g`, instrumented `compile.c`) showed the case: a
+      `next` inside a `while` loop (`putnil, ADJUST(redo label), jump`), in `087:DrawText` line
+      165.
+    - M1 had already listed the risk ("devkitARM short enums break `compile.c` `IS_INSN_ID`", from
+      a PS Vita Ruby port by Asukate), but no patch had been added.
+  - **Fix:** fork Ruby patch 0006. `IS_INSN_ID`, the raw `insn_id` compare in branch jump
+    threading, and `optimize_checktype` now check that the element is an instruction (review
+    findings included).
+  - **Regression check:** engine check `compile_next_loops` compiles a method with 120
+    `while`/`next` loops 60 times, interleaved with allocations. Built with the old `compile.o`,
+    the runtime timed out (crashed) on it; with the patch it passed (engine check `checks=18` at
+    the time).
+  - **Ruled out on the way:**
+    - stack size (4 MiB);
+    - the transient heap (`-DUSE_TRANSIENT_HEAP=0`);
+    - `-fno-strict-aliasing`;
+    - upstream e031eff343 (missing write barrier, https://bugs.ruby-lang.org/issues/19880);
+    - the GC freeing an iseq while it compiles (`GC.stress` test);
+    - heap layout alone.
+  - **Tools added for this:** `tests/smoke/azahar-smoke.sh --gdb PORT` (Azahar's GDB stub) and
+    the fork's `RB3DS_EXTRA_CFLAGS`.
 
 ## M3 findings (2026-11-18)
 - **Renderer architecture (D14):**
@@ -344,6 +442,11 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
 - **M3 (runtime integration):** set `rb3ds_main_stack_size` (fork `3ds/ruby/shim/include/rb3ds.h`) to the
   rgss thread's stack size before `RUBY_INIT_STACK` (mkxp-z `binding/binding-mri.cpp:1194`), and create
   that thread with a large stack (SDL2 n3ds default: 80 KiB).
+- **Later (performance):**
+  - The core 1 renderer from the plan (§3.1) is deferred. M4 reached 31–40 FPS on one core, and
+    drawing takes about 3 ms of a 32 ms frame (console map run 3). The rest is Ruby, mostly
+    Essentials' sprite updates, so native sprite updates come first (§5).
+  - Single frames of about 300 ms on Route 5 (map setup, GC) are not investigated yet.
 - **Later:** Ruby thread preemption (timer without pipes); guard page + exception handler for deep C
   recursion.
 - **Backlog, upstream mkxp-z (on hold, maintainer decision 2026-11-18: no upstream traction for now):**
@@ -354,6 +457,10 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   Before reporting, confirm on a desktop build. mkxp-z has no written AI contribution policy
   (checked the repo, wiki, org profile and issues; the community is on Discord): disclose AI
   assistance if it is ever filed.
+  Bitmap texture leak: `Bitmap::releaseResources` (`src/display/bitmap.cpp`) releases the texture
+  only when no CPU copy (`p->surface`, made by `get_pixel`/`set_pixel`) exists, so every bitmap
+  read with `get_pixel` leaks its texture. The fork has a 3DS-only hook (fork PR
+  https://github.com/michvllni/mkxp-z-3ds/pull/12).
   Charset guessing: `Encoding::convertString` (`src/util/encoding.h`) calls `iconv()` without
   checking `iconv_open`, and uchardet guesses mostly ASCII UTF-8 text wrongly (names libiconv may
   not know, or mojibake). The fork has a 3DS-only hook (fork PR
@@ -393,6 +500,80 @@ Console numbers only, with date, commits of both repos and settings.
   overflow (more than 15 moves to VRAM in one frame panic in libctru `gxqueue.c`), eviction
   copies not waited for, and empty scissor boxes covering the whole target; fixed in
   `5f8fabe6`. Attempt 3 follows.
+
+### 2026-11-19 · Essentials map run 3 · New 3DS · seam check (kit 3)
+- **Commits:** kit 3 (SHA-256 `f189ea99…`) from a local merge of mkxp-z-3ds `8d2d81cc` (fork
+  PR 11) and `fa2a44d4` (fork PR 12, the get_pixel texture leak fix); rmxp3ds `6c44188`.
+- **Result:**
+  - The maintainer confirmed that the black vertical lines while walking sideways are gone
+    (half-texel inset, fork PR 10).
+  - The first set of result files sent was run 2's again (byte-identical); the correct files
+    followed.
+
+  | Map | FPS | Frame avg / p50 / p95 / max | `Scene_Map#update` | Ruby split (ms/frame) | Present path (ms/frame) |
+  |---|---|---|---|---|---|
+  | Route 5 (96 events) | **31.4** | 31.8 / 30.8 / 32.8 / 283 ms | 28.6 ms | updateMaps 4.3, updateSpritesets 21.6 (native tilemap 0.8) | composite 2.7 (vertex transform 1.3, 14.2 draws), present 0.15 |
+  | Route 3 (30 events) | **39.2** | 25.5 / 25.0 / 28.8 / 41 ms | 22.5 ms | updateMaps 1.6, updateSpritesets 19.1 (native tilemap 0.8) | composite 2.2, limiter 0.4 |
+
+  - The same as run 2 within noise. The M4 frame rate holds with the seam and leak fixes.
+  - Snapshots and logs: `3ds-results/map-run3/` (not in the repo).
+
+### 2026-11-19 · Essentials map run 2 · New 3DS · M4 (native map renderer, faster gl3ds vertex path)
+- **Commits:** kit 2 from rmxp3ds `f32d273`, mkxp-z-3ds `eb546543` (`feat/3ds-frame-profile` on top
+  of fork PRs 10 and 9; same tree as `8f74b4b1` after the rebase onto `dev`), SHA-256 `d9625d7e…`.
+  Settings as in run 1.
+- **Results:**
+
+  | Map | FPS | Frame avg / p50 / p95 / max | `Scene_Map#update` | Ruby split (ms/frame) | Present path (ms/frame) |
+  |---|---|---|---|---|---|
+  | Route 5 (96 events) | **31.3** | 31.9 / 30.8 / 33.3 / 295 ms | 28.8 ms | updateMaps 4.3, updateSpritesets 21.7 (native tilemap 0.8) | composite 2.7 (vertex transform 1.3, 13.8 draws), blit 0.06, present 0.15 |
+  | Route 3 (30 events) | **39.9** (the game's 40 FPS cap) | 25.1 / 25.0 / 25.6 / 49 ms | 21.8 ms | updateMaps 1.6, updateSpritesets 18.5 (native tilemap 0.8) | composite 2.1, limiter 0.7 |
+
+- **Reading:**
+  - The M4 frame rate (≥ 30 FPS) is met on both maps.
+  - What's left is Ruby: Essentials' sprite updates take about 18–21 ms per frame, game logic
+    1.6–4.3 ms, drawing about 3 ms.
+  - Single frames of about 300 ms remain on Route 5 (map setup and GC runs).
+- **Seams:**
+  - **Seen:** the maintainer saw thin black vertical lines at tile edges while the player walked
+    sideways (video and snapshots in `3ds-results/map-run2/`).
+  - **Cause:** at factor 0.625, tile edges fall between screen pixels, and edge samples reached
+    the neighbouring atlas slot.
+  - **Fix:** half-texel inset (fork https://github.com/michvllni/mkxp-z-3ds/pull/10). The tile
+    check `scroll_no_seams` reproduced the seam in Azahar and passes with the fix.
+- **Texture leak found on the way:**
+  - The memory figures added to the frame profile showed one texture kept alive per snapshot
+    read with `get_pixel`.
+  - **Cause:** upstream `Bitmap::releaseResources` freed the CPU copy instead of the texture.
+    Each `get_pixel` snapshot cost 2 MB of linear memory, so about 15 of them exhausted it.
+  - **Fix:** fork https://github.com/michvllni/mkxp-z-3ds/pull/12. Engine check
+    `get_pixel_no_texture_leak`: fails on `dev`, passes with the fix.
+- Local logs: `3ds-results/map-run2/` (not in the repo).
+
+### 2026-11-19 · Essentials map run 1 · New 3DS · M4 (`tools/title --scene map`, native map renderer)
+- **Commits:** kit from rmxp3ds `e20f3f0` (`d8d1e5a` only recorded it in NOTES) and mkxp-z-3ds
+  `510a9c66` (`feat/3ds-tilemap-renderer`
+  on top of fork PR 9), kit SHA-256 `1b959ffa…`; game: the Pokémon Essentials v21.1 demo, a
+  local copy. Settings: RGSS1, Hires factor 0.625, `pathCache` false, frame rate 40 (the game's
+  default), preload scripts `patches/essentials-v21/tilemap_renderer.rb` then the map probe.
+  Debug walk in a square, 60 frames to settle, then 600 measured frames per map.
+- **Results:**
+
+  | Map | FPS | Frame avg / p50 / p95 / max | `Scene_Map#update` avg / p95 | GC runs |
+  |---|---|---|---|---|
+  | Route 5 (map 41, 96 events) | 26.7 | 37.5 / 36.6 / 38.4 / 308 ms | 28.9 / 30.0 ms | 8 |
+  | Route 3 (map 31, 30 events) | 32.9 | 30.4 / 29.2 / 33.4 / 269 ms | 23.3 / 26.5 ms | 6 |
+
+  - The snapshots show both maps fully drawn, with the day/night tint, the same as Azahar.
+  - The game reached the map 13.4 s after start, with scripts and the new game loaded.
+- **Reading:**
+  - The frame is Ruby (`Scene_Map#update`: game logic plus Essentials' sprite updates) followed
+    by drawing and presenting (about 7–8.5 ms), on one core.
+  - The single frames of 270–310 ms coincide with the map setup and GC runs (to be confirmed).
+  - The M4 exit (≥ 30 FPS) is met on Route 3 and is 11% short on Route 5.
+  - Next: render on the second core (PLAN §2 threading model), so that Ruby and drawing
+    overlap, then profile the Ruby side.
+- Local logs and snapshots: `3ds-results/map-run1/` (not in the repo).
 
 ### 2026-11-19 · Essentials title run, attempt 5 · New 3DS · M3 exit (`tools/title`) · PASS
 - **Commits:** rmxp3ds `75503ef` (kit 4, SHA-256 02caae71), mkxp-z-3ds `43e7ae75`
