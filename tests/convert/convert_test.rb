@@ -298,6 +298,34 @@ class ConvertTest < Minitest::Test
     assert_in_delta 0.0, t[:loop_start], 1e-9
   end
 
+  # A huge delta before the end of track: not part of the loop, but FluidSynth would render it,
+  # so the length limit counts it (else a damaged file fills the disk).
+  def test_midi_length_limit_counts_every_event
+    path = File.join(@tmp, 'long.mid')
+    body = [[0, [0x90, 60, 100]], [480, [0x80, 60, 0]], [0x0FFFFFFF, [0xFF, 0x2F, 0]]]
+           .map { |d, b| MakeMidi.vlq(d) + b.pack('C*') }.join
+    File.binwrite(path, 'MThd' + [6, 0, 1, 480].pack('Nnnn') + 'MTrk' + [body.bytesize].pack('N') + body)
+    t = RMXP3DS::Midi.timing(path)
+    assert_in_delta 0.5, t[:end], 1e-9
+    assert_operator t[:length], :>, RMXP3DS::Midi::MAX_SECONDS
+    sf = File.join(@tmp, 'test.sf2')
+    File.binwrite(sf, MakeMidi.sf2)
+    assert_match(/over the limit/, RMXP3DS::Midi.render(path, sf, File.join(@tmp, 'long.ogg')))
+  end
+
+  def test_tool_timeout_kills_the_process_group
+    RMXP3DS::Midi.send(:remove_const, :TIMEOUT)
+    RMXP3DS::Midi.const_set(:TIMEOUT, 1)
+    a = Time.now
+    err, ok = RMXP3DS::Midi.run('sh', '-c', 'sleep 30 & sleep 30')
+    refute ok
+    assert_match(/timed out/, err)
+    assert_operator Time.now - a, :<, 10
+  ensure
+    RMXP3DS::Midi.send(:remove_const, :TIMEOUT)
+    RMXP3DS::Midi.const_set(:TIMEOUT, 600)
+  end
+
   def test_midi_bad_soundfont_and_same_names
     skip "needs #{RMXP3DS::Midi.missing_tools.join(' and ')}" unless RMXP3DS::Midi.missing_tools.empty?
     make_game

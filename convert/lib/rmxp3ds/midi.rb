@@ -34,6 +34,7 @@ module RMXP3DS
       tempos = []
       loop_tick = nil
       end_tick = 0
+      final_tick = 0 # last tick of any event (FluidSynth renders up to it)
       pos = 8 + hlen
       read = 0
       ntrks.times do
@@ -41,21 +42,23 @@ module RMXP3DS
         len = data[pos + 4, 4].unpack1('N')
         start = pos + 8
         pos = start + len
-        tick, loop_t = track(data, start, [pos, data.bytesize].min, tempos)
+        tick, loop_t, final = track(data, start, [pos, data.bytesize].min, tempos)
         end_tick = tick if tick > end_tick
+        final_tick = final if final > final_tick
         loop_tick = loop_t if loop_t # the last one read, as mkxp-z
         read += 1
       end
       return nil if read.zero?
       loop_tick = nil if loop_tick && loop_tick >= end_tick # "Enterbrain" ME markers at the end
       map = tempo_map(tempos, div)
-      { loop_start: loop_tick ? seconds(map, loop_tick) : 0.0, end: seconds(map, end_tick) }
+      { loop_start: loop_tick ? seconds(map, loop_tick) : 0.0, end: seconds(map, end_tick),
+        length: seconds(map, final_tick) }
     rescue StandardError
       nil # damaged file: not rendered
     end
 
-    # Reads one track: returns [tick of the last handled event, tick of the last CC111 or nil];
-    # adds tempo changes.
+    # Reads one track: returns [tick of the last handled event, tick of the last CC111 or nil,
+    # tick of the last event of any kind]; adds tempo changes as [tick, usec, order].
     def self.track(data, pos, stop, tempos)
       tick = 0
       last = 0
@@ -76,7 +79,7 @@ module RMXP3DS
           type = data.getbyte(pos) or break
           len, pos = vlq(data, pos + 1)
           if type == 0x51 && len == 3 && pos + 3 <= stop
-            tempos << [tick, (data.getbyte(pos) << 16) | (data.getbyte(pos + 1) << 8) | data.getbyte(pos + 2)]
+            tempos << [tick, (data.getbyte(pos) << 16) | (data.getbyte(pos + 1) << 8) | data.getbyte(pos + 2), tempos.size]
             last = tick
           end
           pos += len
@@ -91,7 +94,7 @@ module RMXP3DS
           pos += (hi == 0xC0 || hi == 0xD0) ? 1 : 2
         end
       end
-      [last, loop_tick]
+      [last, loop_tick, tick]
     end
 
     def self.vlq(data, pos)
@@ -108,7 +111,7 @@ module RMXP3DS
     # [[tick, seconds at tick, seconds per tick]] from tempo events (default 120 BPM).
     def self.tempo_map(tempos, div)
       map = [[0, 0.0, 0.5 / div]]
-      tempos.sort_by(&:first).each do |tick, usec|
+      tempos.sort_by { |tick, _usec, order| [tick, order] }.each do |tick, usec, _order| # stable: file order
         t0, s0, spt = map.last
         sec = s0 + (tick - t0) * spt
         map.pop if tick == t0
@@ -137,19 +140,25 @@ module RMXP3DS
       false
     end
 
-    # Runs a command with a time limit: [stderr, success].
+    # Runs a command with a time limit: [stderr, success]. On timeout the whole process group is
+    # killed and the readers finish (they see the pipes close) before the pipes are closed.
     def self.run(*cmd)
-      Open3.popen3(*cmd) do |stdin, stdout, stderr, thr|
+      Open3.popen3(*cmd, pgroup: true) do |stdin, stdout, stderr, thr|
         stdin.close
-        out = Thread.new { stdout.read }
-        err = Thread.new { stderr.read }
-        unless thr.join(TIMEOUT)
-          Process.kill('KILL', thr.pid)
+        out = Thread.new { stdout.read rescue nil }
+        err = Thread.new { stderr.read rescue nil }
+        timed_out = !thr.join(TIMEOUT)
+        if timed_out
+          begin
+            Process.kill('KILL', -thr.pid)
+          rescue Errno::ESRCH
+            nil # already gone
+          end
           thr.join
-          return ["timed out after #{TIMEOUT} s", false]
         end
-        out.join
-        [err.value.to_s, thr.value.success?]
+        [out, err].each { |t| t.join(5) || t.kill }
+        return ["timed out after #{TIMEOUT} s", false] if timed_out
+        [err.value.to_s, thr.value.success? == true]
       end
     end
 
@@ -159,7 +168,9 @@ module RMXP3DS
       return 'the soundfont is not a SoundFont 2 file' unless soundfont?(soundfont)
       t = timing(mid)
       return 'not a readable MIDI file' unless t
-      return format('%.0f min long, over the limit of %d min', t[:end] / 60, MAX_SECONDS / 60) if t[:end] > MAX_SECONDS
+      if t[:length] > MAX_SECONDS
+        return format('%.0f min long, over the limit of %d min', t[:length] / 60, MAX_SECONDS / 60)
+      end
       Dir.mktmpdir('rmxp3ds-midi') do |tmp|
         wav = File.join(tmp, 'song.wav')
         conf = File.join(tmp, 'empty.conf') # not the user's ~/.fluidsynth
