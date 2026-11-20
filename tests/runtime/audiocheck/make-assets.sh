@@ -9,6 +9,8 @@
 #   content) in the game layout under DIR:
 #     Audio/BGM/tone.ogg     2.0 s, 44100 Hz stereo, 440 Hz; Vorbis comments LOOPSTART=22050
 #                            LOOPLENGTH=44100 (loops 0.5 s .. 1.5 s)
+#     Audio/BGM/zero.ogg     2.0 s, 44100 Hz mono, 523 Hz; LOOPSTART=0 LOOPLENGTH=22050 (loops
+#                            0 .. 0.5 s, as the converter writes for MIDI without CC111)
 #     Audio/BGM/both.ogg     1.0 s, 32000 Hz mono, next to both.mid (the runtime skips the MIDI)
 #     Audio/BGM/both.mid     a minimal MIDI file (header and one empty track)
 #     Audio/BGM/song.mid     the same MIDI alone (not playable on the 3DS: skipped, no error)
@@ -51,6 +53,7 @@ tone() {
 
 mkdir -p "$out/Audio/BGM" "$out/Audio/BGS" "$out/Audio/ME" "$out/Audio/SE"
 tone "$out/Audio/BGM/tone.ogg" 2.0 44100 2 440 -c:a libvorbis -metadata LOOPSTART=22050 -metadata LOOPLENGTH=44100
+tone "$out/Audio/BGM/zero.ogg" 2.0 44100 1 523 -c:a libvorbis -metadata LOOPSTART=0 -metadata LOOPLENGTH=22050
 tone "$out/Audio/BGM/both.ogg" 1.0 32000 1 330 -c:a libvorbis
 tone "$out/Audio/BGS/short.ogg" 0.5 32000 1 220 -c:a libvorbis
 tone "$out/Audio/ME/fanfare.ogg" 0.8 48000 2 660 -c:a libvorbis

@@ -194,7 +194,10 @@ module RMXP3DS
       json = by_name['mkxp.json']
       if json
         text = File.read(File.join(@game.dir, json), encoding: 'UTF-8').scrub('')
-        names << Regexp.last_match(1) if text =~ /"midiSoundFont"\s*:\s*"([^"]+)"/
+        text = text.gsub(%r{/\*.*?\*/}m, '').gsub(%r{^\s*//[^\n]*}, '') # JSON5 comments (whole lines)
+        if text =~ /"midiSoundFont"\s*:\s*"((?:[^"\\]|\\.)+)"/
+          names << Regexp.last_match(1).gsub(/\\(.)/) { Regexp.last_match(1) }
+        end
       end
       names << 'soundfont.sf2'
       hit = names.lazy.filter_map { |n| by_name[n.tr('\\', '/').sub(%r{\A\./}, '').downcase] }.first
@@ -202,7 +205,9 @@ module RMXP3DS
     end
 
     # [[MIDI file, Ogg file in the package or nil]] for the MIDI files under Audio/. nil: not
-    # rendered (an Ogg/WAV of the same name exists, or no soundfont/tools); notes the reason.
+    # rendered (an Ogg/WAV of the same name exists, another MIDI has the same name, or no
+    # soundfont/tools); notes the reason. Without soundfont or tools, Oggs rendered by an earlier
+    # run are removed too: the package always mirrors the current conversion (with a warning).
     def midi_plan(included)
       mids = included.select { |f| f.downcase.start_with?('audio/') && MIDI_EXT.include?(File.extname(f).downcase) }
       return [] if mids.empty?
@@ -216,9 +221,16 @@ module RMXP3DS
                      "#{missing.join(' and ')} not found: #{mids.size} MIDI files left out, the 3DS plays no music " \
                        'for them (install them and convert again)'
                    end
-      mids.map do |m|
+      taken = {}
+      mids.sort.map do |m|
         base = m.sub(/\.[^.\/]*\z/, '')
-        [m, (@midi_note || bases[base.downcase]) ? nil : "#{base}.ogg"]
+        ogg = (@midi_note || bases[base.downcase]) ? nil : "#{base}.ogg"
+        if ogg && taken[ogg.downcase]
+          @validator.findings << Finding.new(:warning, "#{m}: same name as #{taken[ogg.downcase]}; only that one is rendered")
+          ogg = nil
+        end
+        taken[ogg.downcase] = m if ogg
+        [m, ogg]
       end
     end
 
@@ -234,8 +246,10 @@ module RMXP3DS
       rendered = 0
       todo.each_with_index do |(mid, ogg), i|
         st = File.stat(File.join(@game.dir, mid))
-        stamp = [st.size, st.mtime.to_i, sf.size, sf.mtime.to_i, Midi::RATE, Midi::GAIN, Midi::QUALITY].join(' ')
+        stamp = [st.size, st.mtime.to_i, sf.size, sf.mtime.to_i, Midi::VERSION, Midi::RATE, Midi::GAIN, Midi::QUALITY,
+                 soundfont].join(' ')
         out = File.join(dest, ogg)
+        File.unlink(out) if File.symlink?(out) # never write through a link in the package
         if old[ogg] == stamp && File.file?(out)
           done[ogg] = stamp
           next

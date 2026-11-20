@@ -185,9 +185,17 @@ Newest first within each section. Dates are absolute. Replaces `docs/STATUS.md` 
   (mkxp-z uses FluidSynth on the PC), so the converter renders every MIDI file under `Audio/`
   with FluidSynth and the game's soundfont (`mkxp.json` `midiSoundFont`, else `soundfont.sf2`,
   else `--soundfont`) to Ogg Vorbis, 32000 Hz (close to the DSP's 32728 Hz), quality 4.
-  - Loop: as mkxp-z's MIDI player (`src/audio/midisource.cpp`): controller 111 marks the loop
-    start, the end of the longest track the loop end; written as `LOOPSTART`/`LOOPLENGTH`. The
-    2 s reverb tail after the last event is rendered outside the loop. None of the 33 Essentials
+  - Loop: as mkxp-z's MIDI player (`src/audio/midisource.cpp`): the last controller 111 in file
+    order marks the loop start; the loop end is the end of the longest track, where a track ends
+    at its last event mkxp-z handles (the end-of-track delta does not count); a controller 111
+    at or after the end loops from 0. Written as `LOOPSTART`/`LOOPLENGTH`; the runtime honors
+    `LOOPSTART=0` too (upstream mkxp-z would loop the whole file, tail included). The 2 s reverb
+    tail after the last event is rendered outside the loop.
+  - Safety (review): the soundfont must be a SoundFont 2 file (FluidSynth silently falls back to
+    the system's soundfont otherwise); songs over 30 min are refused; each tool run times out
+    after 10 min; FluidSynth gets an empty config file instead of the user's; rendered files
+    never write through links; the cache stamp includes a render version and the soundfont
+    path. None of the 33 Essentials
     MIDI files has controller 111 (they loop from the start).
   - Gain 0.5 (FluidSynth default 0.2 was quiet): mean −16.9 dB against −15.3 dB of Essentials'
     own Ogg BGM; rendered as float and limited at 0.97, so peaks do not clip.

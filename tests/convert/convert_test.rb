@@ -282,6 +282,33 @@ class ConvertTest < Minitest::Test
     assert_nil RMXP3DS::Midi.timing(path)
     File.write(path, 'not midi')
     assert_nil RMXP3DS::Midi.timing(path)
+    File.binwrite(path, 'MThd' + [6, 0, 1, 96].pack('Nnnn') + "MTrk\0\0") # truncated track header
+    assert_nil RMXP3DS::Midi.timing(path)
+  end
+
+  # Loop end and CC111 as mkxp-z's midisource.cpp: the end of track's delta does not count, a
+  # CC111 at the end loops from 0.
+  def test_midi_timing_like_mkxp_z
+    path = File.join(@tmp, 'me.mid')
+    ev = ->(list) { list.map { |d, b| MakeMidi.vlq(d) + b.pack('C*') }.join }
+    body = ev.call([[0, [0x90, 60, 100]], [480, [0x80, 60, 0]], [0, [0xB0, 111, 0]], [960, [0xFF, 0x2F, 0]]])
+    File.binwrite(path, 'MThd' + [6, 0, 1, 480].pack('Nnnn') + 'MTrk' + [body.bytesize].pack('N') + body)
+    t = RMXP3DS::Midi.timing(path)
+    assert_in_delta 0.5, t[:end], 1e-9
+    assert_in_delta 0.0, t[:loop_start], 1e-9
+  end
+
+  def test_midi_bad_soundfont_and_same_names
+    skip "needs #{RMXP3DS::Midi.missing_tools.join(' and ')}" unless RMXP3DS::Midi.missing_tools.empty?
+    make_game
+    add_midi(soundfont: false)
+    File.write(File.join(@game, 'soundfont.sf2'), 'not a soundfont')
+    File.binwrite(File.join(@game, 'Audio/BGM/song.midi'), MakeMidi.midi)
+    out, err, st = convert('--id', 't')
+    assert st.success?, err + out
+    assert_includes out, 'not a SoundFont 2 file'
+    assert_includes out, 'Audio/BGM/song.midi: same name as Audio/BGM/song.mid'
+    refute File.exist?(pkg('Audio/BGM/song.ogg'))
   end
 
   def test_midi_rendered_to_ogg_with_loop

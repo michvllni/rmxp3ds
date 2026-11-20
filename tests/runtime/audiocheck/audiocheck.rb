@@ -66,6 +66,13 @@ begin
   wait.call(0.6)
   check.call('bgm_fade_stops', Audio.bgm_pos == 0, fmt.(Audio.bgm_pos))
 
+  # LOOPSTART=0 with LOOPLENGTH loops 0 .. LOOPLENGTH (rmxp3ds; upstream would loop the file).
+  Audio.bgm_play('Audio/BGM/zero')
+  wait.call(1.2)
+  z = Audio.bgm_pos
+  Audio.bgm_stop
+  check.call('bgm_loop_from_zero', z > 0 && z < 0.55, fmt.(z))
+
   # A start position (seconds).
   Audio.bgm_play('Audio/BGM/tone', 100, 100, 1.0)
   wait.call(0.2)
