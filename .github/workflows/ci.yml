@@ -176,6 +176,22 @@ jobs:
                 --sd-file build/tilecheck/single.png=rmxp3ds/game/Graphics/Autotiles/single.png \
                 --sd-file build/tilecheck/autotile192.png=rmxp3ds/game/Graphics/Autotiles/autotile192.png \
                 --timeout 300 --screenshot build/tile-smoke.png'
+      # M6: ndsp audio. Azahar's HLE DSP ignores the firmware's content, so a placeholder of zeros
+      # stands in for sdmc:/3ds/dspfirm.cdc (the console needs the real one, dumped from it).
+      - name: Azahar runtime audio check
+        run: |
+          docker run --rm --user "$(id -u):$(id -g)" -e HOME=/tmp \
+            -v "$PWD:/workspaces/rmxp3ds" -w /workspaces/rmxp3ds rmxp3ds-dev:ci \
+            bash -c 'set -euo pipefail
+              tests/runtime/audiocheck/make-assets.sh --out-dir build/audiocheck
+              head -c 4096 /dev/zero > build/audiocheck/dspfirm-placeholder.cdc
+              tests/smoke/azahar-smoke.sh --3dsx runtime/build-3ds/mkxp/mkxp-z.3dsx \
+                --result rmxp3ds/test/audio.txt --expect "^RMXP3DS_TEST audio PASS" \
+                --sd-file tests/runtime/audiocheck/mkxp.json=rmxp3ds/game/mkxp.json \
+                --sd-file tests/runtime/audiocheck/audiocheck.rb=rmxp3ds/game/audiocheck.rb \
+                --sd-file build/audiocheck/dspfirm-placeholder.cdc=3ds/dspfirm.cdc \
+                --sd-dir build/audiocheck/Audio=rmxp3ds/game/Audio \
+                --timeout 300'
       # M5: converter (convert/rmxp3ds-convert) host tests, then a converted synthetic game booted
       # from sdmc:/rmxp3ds/games/<id>/ through the runtime's game picker.
       - name: Converter tests (host) and converted package in Azahar

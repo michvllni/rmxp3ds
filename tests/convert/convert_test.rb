@@ -6,6 +6,7 @@ require 'open3'
 require 'tmpdir'
 require 'zlib'
 require_relative '../../convert/lib/rmxp3ds/package'
+require_relative '../fixtures/make-midi'
 
 class ConvertTest < Minitest::Test
   REPO = File.expand_path('../..', __dir__)
@@ -261,6 +262,58 @@ class ConvertTest < Minitest::Test
     out, err, st = convert('--id', 't', '--dry-run')
     assert st.success?, err
     assert_includes out, 'Win32API kernel32: 1 script(s) (x.rb)'
+  end
+
+  def add_midi(soundfont: true)
+    FileUtils.mkdir_p(File.join(@game, 'Audio/BGM'))
+    File.binwrite(File.join(@game, 'Audio/BGM/song.mid'), MakeMidi.midi)
+    File.binwrite(File.join(@game, 'Audio/BGM/both.mid'), MakeMidi.midi)
+    File.write(File.join(@game, 'Audio/BGM/both.ogg'), 'ogg beside the midi')
+    File.binwrite(File.join(@game, 'soundfont.sf2'), MakeMidi.sf2) if soundfont
+  end
+
+  def test_midi_timing
+    path = File.join(@tmp, 'song.mid')
+    File.binwrite(path, MakeMidi.midi)
+    t = RMXP3DS::Midi.timing(path)
+    assert_in_delta 0.5, t[:loop_start], 1e-9
+    assert_in_delta 1.5, t[:end], 1e-9
+    File.binwrite(path, 'MThd' + [6, 0, 1, 0x8000 | 25].pack('Nnnn')) # SMPTE time base
+    assert_nil RMXP3DS::Midi.timing(path)
+    File.write(path, 'not midi')
+    assert_nil RMXP3DS::Midi.timing(path)
+  end
+
+  def test_midi_rendered_to_ogg_with_loop
+    skip "needs #{RMXP3DS::Midi.missing_tools.join(' and ')}" unless RMXP3DS::Midi.missing_tools.empty?
+    make_game
+    add_midi
+    out, err, st = convert('--id', 't')
+    assert st.success?, err + out
+    assert File.size?(pkg('Audio/BGM/song.ogg'))
+    refute File.exist?(pkg('Audio/BGM/song.mid'))
+    refute File.exist?(pkg('Audio/BGM/both.mid'))
+    refute File.exist?(pkg('soundfont.sf2'))
+    assert_equal 'ogg beside the midi', File.read(pkg('Audio/BGM/both.ogg'))
+    assert_includes out, 'MIDI: rendered 1, unchanged 0 of 1'
+    tags, = Open3.capture2('ffprobe', '-v', 'error', '-show_entries', 'stream_tags=LOOPSTART,LOOPLENGTH',
+                           '-of', 'compact', pkg('Audio/BGM/song.ogg'))
+    assert_includes tags, 'LOOPSTART=16000'
+    assert_includes tags, 'LOOPLENGTH=32000'
+    out, = convert('--id', 't')
+    assert_includes out, 'MIDI: rendered 0, unchanged 1 of 1'
+    assert File.size?(pkg('Audio/BGM/song.ogg')), 'the rendered Ogg survives the stale-file cleanup'
+  end
+
+  def test_midi_without_soundfont_is_left_out
+    make_game
+    add_midi(soundfont: false)
+    out, err, st = convert('--id', 't')
+    assert st.success?, err + out
+    assert_includes out, 'no soundfont'
+    refute File.exist?(pkg('Audio/BGM/song.mid'))
+    refute File.exist?(pkg('Audio/BGM/song.ogg'))
+    assert File.file?(pkg('Audio/BGM/both.ogg'))
   end
 
   def test_image_sizes

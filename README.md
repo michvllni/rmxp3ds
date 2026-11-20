@@ -42,6 +42,9 @@ Copy the contents of `build/sd` to the root of the SD card. The app (`sdmc:/3ds/
 lists every game in `sdmc:/rmxp3ds/games/`. Each package has a report
 (`rmxp3ds/convert-report.txt`) with the detected profile, the files left out (Windows
 programs and DLLs), missing graphics or audio, and script calls that cannot work on the 3DS.
+MIDI music is rendered to Ogg Vorbis with the game's soundfont; that needs `fluidsynth` and
+`ffmpeg` on the PC. Sound on the console needs its DSP firmware at `sdmc:/3ds/dspfirm.cdc`
+(dumped on the console, e.g. with DSP1); without it games run silently.
 `--help` lists all options.
 
 ## License

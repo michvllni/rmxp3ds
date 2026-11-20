@@ -6,6 +6,7 @@ require 'digest'
 require 'fileutils'
 require 'json'
 require_relative 'game'
+require_relative 'midi'
 require_relative 'validate'
 
 module RMXP3DS
@@ -18,13 +19,18 @@ module RMXP3DS
     EXCLUDE_DIRS = %w[.git __macosx rmxp3ds].freeze # rmxp3ds/: our own files in the package
     # Name of the file in the package's rmxp3ds/ that records which game directory it came from.
     SOURCE_FILE = 'source.txt'
+    # Name of the file in the package's rmxp3ds/ that lists the rendered MIDI files (cache).
+    MIDI_FILE = 'midi.txt'
+    MIDI_EXT = %w[.mid .midi].freeze
+    PLAYABLE_EXT = %w[.ogg .wav].freeze
     # Image height up to which the RGSS Tilemap of the runtime still draws a tileset (NOTES.md M4).
     RGSS_TILESET_HEIGHT = 1300
 
     attr_reader :game, :id, :height, :report, :validator
 
     # opts: id, out, height, patch_set ('auto', 'none' or a directory), preloads (files),
-    # runtime (.3dsx or nil), clean (remove the package directory first).
+    # runtime (.3dsx or nil), soundfont (file or nil: the game's), clean (remove the package
+    # directory first).
     def initialize(game, opts)
       @game = game
       @opts = opts
@@ -45,20 +51,23 @@ module RMXP3DS
       included, excluded = @game.files.partition { |f| include?(f) }
       @validator = Validator.new(@game, included).run
       patches = patch_files
+      midi = midi_plan(included)
       write_report(included, excluded, patches)
       return false if @validator.errors?
       return true if dry_run
 
       FileUtils.rm_rf(dest) if @opts[:clean]
       check_source
-      removed = remove_stale(included)
-      copied = copy_files(included)
+      copy = included - midi.map(&:first)
+      removed = remove_stale(copy + midi.filter_map { |_mid, ogg| ogg })
+      copied = copy_files(copy)
       FileUtils.mkdir_p(File.join(dest, 'rmxp3ds'))
       File.write(File.join(dest, 'rmxp3ds', SOURCE_FILE), "#{@game.dir}\n")
       preload_paths = install_preloads(patches)
       File.write(File.join(dest, 'mkxp.json'), mkxp_json(preload_paths))
-      @report << "copied #{copied} of #{included.size} files (others unchanged since the last run)"
+      @report << "copied #{copied} of #{copy.size} files (others unchanged since the last run)"
       @report << "removed #{removed} files no longer in the game" if removed.positive?
+      render_midi(midi)
       install_runtime
       File.write(File.join(dest, 'rmxp3ds', 'convert-report.txt'), "#{@report.join("\n")}\n")
       true
@@ -175,6 +184,81 @@ module RMXP3DS
       File.file?(dst) && File.size(dst) == File.size(src) && File.mtime(dst).to_i == File.mtime(src).to_i
     end
 
+    # The game's soundfont: --soundfont, else the game's mkxp.json midiSoundFont, else
+    # soundfont.sf2 in the game directory. nil if there is none.
+    def soundfont
+      return @soundfont if defined?(@soundfont)
+      return @soundfont = @opts[:soundfont] if @opts[:soundfont]
+      names = []
+      by_name = @game.files.to_h { |f| [f.downcase, f] }
+      json = by_name['mkxp.json']
+      if json
+        text = File.read(File.join(@game.dir, json), encoding: 'UTF-8').scrub('')
+        names << Regexp.last_match(1) if text =~ /"midiSoundFont"\s*:\s*"([^"]+)"/
+      end
+      names << 'soundfont.sf2'
+      hit = names.lazy.filter_map { |n| by_name[n.tr('\\', '/').sub(%r{\A\./}, '').downcase] }.first
+      @soundfont = hit && File.join(@game.dir, hit)
+    end
+
+    # [[MIDI file, Ogg file in the package or nil]] for the MIDI files under Audio/. nil: not
+    # rendered (an Ogg/WAV of the same name exists, or no soundfont/tools); notes the reason.
+    def midi_plan(included)
+      mids = included.select { |f| f.downcase.start_with?('audio/') && MIDI_EXT.include?(File.extname(f).downcase) }
+      return [] if mids.empty?
+      bases = included.select { |f| PLAYABLE_EXT.include?(File.extname(f).downcase) }
+                      .to_h { |f| [f.downcase.sub(/\.[^.\/]*\z/, ''), true] }
+      missing = Midi.missing_tools
+      @midi_note = if !soundfont
+                     "no soundfont (soundfont.sf2, mkxp.json midiSoundFont or --soundfont): #{mids.size} MIDI files " \
+                       'left out, the 3DS plays no music for them'
+                   elsif !missing.empty?
+                     "#{missing.join(' and ')} not found: #{mids.size} MIDI files left out, the 3DS plays no music " \
+                       'for them (install them and convert again)'
+                   end
+      mids.map do |m|
+        base = m.sub(/\.[^.\/]*\z/, '')
+        [m, (@midi_note || bases[base.downcase]) ? nil : "#{base}.ogg"]
+      end
+    end
+
+    # Renders the MIDI files whose Ogg is missing or older than the MIDI and the soundfont
+    # (rmxp3ds/midi.txt remembers sizes and times).
+    def render_midi(plan)
+      todo = plan.select { |_m, ogg| ogg }
+      marker = File.join(dest, 'rmxp3ds', MIDI_FILE)
+      old = File.file?(marker) ? File.readlines(marker, chomp: true).to_h { |l| l.split("\t", 2) } : {}
+      sf = soundfont && File.stat(soundfont)
+      done = {}
+      failed = []
+      rendered = 0
+      todo.each_with_index do |(mid, ogg), i|
+        st = File.stat(File.join(@game.dir, mid))
+        stamp = [st.size, st.mtime.to_i, sf.size, sf.mtime.to_i, Midi::RATE, Midi::GAIN, Midi::QUALITY].join(' ')
+        out = File.join(dest, ogg)
+        if old[ogg] == stamp && File.file?(out)
+          done[ogg] = stamp
+          next
+        end
+        warn "rmxp3ds-convert: MIDI #{i + 1}/#{todo.size}: #{mid}"
+        FileUtils.mkdir_p(File.dirname(out))
+        err = Midi.render(File.join(@game.dir, mid), soundfont, out)
+        if err
+          File.delete(out) if File.file?(out)
+          failed << "  #{mid}: #{err} (no music for it on the 3DS)"
+        else
+          done[ogg] = stamp
+          rendered += 1
+        end
+      end
+      File.write(marker, done.map { |k, v| "#{k}\t#{v}\n" }.join)
+      return if todo.empty?
+      @report << "MIDI: rendered #{rendered}, unchanged #{done.size - rendered} of #{todo.size} " \
+                 "(soundfont #{File.basename(soundfont)}, Ogg Vorbis #{Midi::RATE} Hz)"
+      @report << "MIDI not rendered: #{failed.size}" unless failed.empty?
+      @report.concat(failed)
+    end
+
     def install_preloads(patches)
       FileUtils.rm_rf(File.join(dest, 'rmxp3ds', 'patches'))
       FileUtils.rm_rf(File.join(dest, 'rmxp3ds', 'preload'))
@@ -233,6 +317,7 @@ module RMXP3DS
       r << "files: #{included.size} (#{mib(size.call(included))}); left out #{excluded.size} (#{mib(size.call(excluded))})"
       excluded.first(20).each { |f| r << "  left out: #{f}" }
       r << "  ... #{excluded.size - 20} more" if excluded.size > 20
+      v.findings << Finding.new(:warning, @midi_note) if @midi_note
       large = v.large_images
       unless large.empty?
         r << "images over #{Validator::TEXTURE_LIMIT} px: #{large.size} (drawn from CPU memory, slower)"
